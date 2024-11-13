@@ -1,0 +1,1119 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.30.23.60470",
+      "templateHash": "5446540341213262393"
+    }
+  },
+  "variables": {
+    "varlocation": "[resourceGroup().location]",
+    "varUAMIname": "[substring(format('UAMI{0}', uniqueString(resourceGroup().name, subscription().id)), 0, 14)]",
+    "Workflowname": "00-Prerequisites",
+    "uniquename": "[substring(format('TeamsAudit{0}', uniqueString(resourceGroup().name, subscription().id)), 0, 15)]",
+    "varstorageaccountname": "[toLower(variables('uniquename'))]",
+    "varkeyvaultname": "[toLower(variables('uniquename'))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2022-09-01",
+      "name": "[variables('Workflowname')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[variables('varlocation')]"
+          },
+          "UAMI": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', variables('varUAMIname')), '2022-09-01').outputs.objectid.value]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.30.23.60470",
+              "templateHash": "5716484711623555136"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Specifies the location for resources."
+              }
+            },
+            "subscriptionid": {
+              "type": "string",
+              "defaultValue": "[subscription().subscriptionId]"
+            },
+            "resourcegroup": {
+              "type": "string",
+              "defaultValue": "[resourceGroup().name]"
+            },
+            "UAMI": {
+              "type": "string"
+            },
+            "parName": {
+              "type": "string",
+              "defaultValue": "00-Prerequistes"
+            }
+          },
+          "variables": {
+            "$fxv#0": {
+              "definition": {
+                "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+                "actions": {
+                  "foreach": {
+                    "actions": {
+                      "Condition": {
+                        "actions": {},
+                        "else": {
+                          "actions": {
+                            "createtable": {
+                              "inputs": {
+                                "body": "@{item()}",
+                                "host": {
+                                  "connection": {
+                                    "name": "@parameters('$connections')['azuretables']['connectionId']"
+                                  }
+                                },
+                                "method": "post",
+                                "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables"
+                              },
+                              "runAfter": {},
+                              "type": "ApiConnection"
+                            },
+                            "delay": {
+                              "inputs": {
+                                "interval": {
+                                  "count": 10,
+                                  "unit": "Second"
+                                }
+                              },
+                              "runAfter": {
+                                "createtable": [
+                                  "Succeeded",
+                                  "Failed"
+                                ]
+                              },
+                              "type": "Wait"
+                            }
+                          }
+                        },
+                        "expression": {
+                          "and": [
+                            {
+                              "equals": [
+                                "@actions('checktable').outputs.statusCode",
+                                200
+                              ]
+                            }
+                          ]
+                        },
+                        "runAfter": {
+                          "checktable": [
+                            "Succeeded",
+                            "Failed"
+                          ]
+                        },
+                        "type": "If"
+                      },
+                      "checktable": {
+                        "inputs": {
+                          "host": {
+                            "connection": {
+                              "name": "@parameters('$connections')['azuretables']['connectionId']"
+                            }
+                          },
+                          "method": "get",
+                          "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables/@{encodeURIComponent(item())}"
+                        },
+                        "runAfter": {},
+                        "type": "ApiConnection"
+                      }
+                    },
+                    "foreach": "@variables('tables')",
+                    "runAfter": {
+                      "inittables": [
+                        "Succeeded"
+                      ]
+                    },
+                    "type": "Foreach"
+                  },
+                  "foreachsolution": {
+                    "actions": {
+                      "checkappconfig": {
+                        "actions": {},
+                        "else": {
+                          "actions": {
+                            "addsolution": {
+                              "inputs": {
+                                "body": {
+                                  "Value": "@{items('foreachsolution')?['value']}"
+                                },
+                                "host": {
+                                  "connection": {
+                                    "name": "@parameters('$connections')['azuretables']['connectionId']"
+                                  }
+                                },
+                                "method": "patch",
+                                "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables/@{encodeURIComponent('solutionConfig')}/entities(PartitionKey='@{encodeURIComponent(items('foreachsolution')?['solution'])}',RowKey='@{encodeURIComponent('config')}')"
+                              },
+                              "runAfter": {},
+                              "type": "ApiConnection"
+                            }
+                          }
+                        },
+                        "expression": {
+                          "and": [
+                            {
+                              "equals": [
+                                "@actions('checksolution').outputs.statusCode",
+                                200
+                              ]
+                            }
+                          ]
+                        },
+                        "runAfter": {
+                          "checksolution": [
+                            "Succeeded",
+                            "Failed"
+                          ]
+                        },
+                        "type": "If"
+                      },
+                      "checksolution": {
+                        "inputs": {
+                          "host": {
+                            "connection": {
+                              "name": "@parameters('$connections')['azuretables']['connectionId']"
+                            }
+                          },
+                          "method": "get",
+                          "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables/@{encodeURIComponent('solutionConfig')}/entities(PartitionKey='@{encodeURIComponent(items('foreachsolution')?['solution'])}',RowKey='@{encodeURIComponent('config')}')"
+                        },
+                        "runAfter": {},
+                        "type": "ApiConnection"
+                      }
+                    },
+                    "foreach": "@variables('config')",
+                    "runAfter": {
+                      "initconfig": [
+                        "Succeeded"
+                      ]
+                    },
+                    "type": "Foreach"
+                  },
+                  "initconfig": {
+                    "inputs": {
+                      "variables": [
+                        {
+                          "name": "config",
+                          "type": "array",
+                          "value": [
+                            {
+                              "solution": "app",
+                              "value": "{ \"clientId\": \"<yourappid>\", \"tenantId\": \"<yourtenantid>\", \"secret\": \"<SeeKeyVault>\" }"
+                            },
+                            {
+                              "solution": "01",
+                              "value": "{ \"note\": \"If SPO trigger is used, modifiy site and list name in flow 01 as well!\", \"site\": \"https://<mycompany>.sharepoint.com/sites/TeamsAudit/\", \"list\": \"ProvisionTeam\", \"teamtemplateid\": \"com.microsoft.teams.template.ManageAProject\", \"APIEndpoint\": \"https://governancetoolkit365.azurewebsites.net/api/ProvisionTeam\", \"managerApproval\": true, \"adminEmail\": \"<admin1@mycompany.onmicrosoft.com>\", \"debug\": true }"
+                            },
+                            {
+                              "solution": "02",
+                              "value": "{ \"note\": \"If SPO trigger is used, modifiy site and list name in flow 02 as well!\", \"site\": \"https://<mycompany>.sharepoint.com/sites/TeamsAudit/\", \"list\": \"InviteGuest\", \"APIEndpoint\": \"https://governancetoolkit365.azurewebsites.net/api/InviteGuest\", \"adminEmail\": \"<admin1@mycompany.onmicrosoft.com>\", \"debug\": true }"
+                            },
+                            {
+                              "solution": "03",
+                              "value": "{ \"logindays\": 90,\"site\": \"https://<mycompany>.sharepoint.com/sites/TeamsAudit/\",\"list\": \"ReportGuests\", \"debug\": true }"
+                            },
+                            {
+                              "solution": "04",
+                              "value": "{ \"site\": \"https://<mycompany>.sharepoint.com/sites/TeamsAudit/\",\"list\": \"ReportTeams\", \"debug\": true }"
+                            },
+                            {
+                              "solution": "05",
+                              "value": "{ \"adminEmail\": \"<admin1@mycompany.onmicrosoft.com>\", \"debug\": true }"
+                            },
+                            {
+                              "solution": "06",
+                              "value": "{ \"daysinactive\": 180, \"adminEmail\": \"<admin1@mycompany.onmicrosoft.com>\", \"debug\": true }"
+                            },
+                            {
+                              "solution": "07",
+                              "value": "{ \"tableGuestsCleanup\": \"s07GuestsCleanup\", \"lastLoginDays\": 150, \"deleteDaysLater\": 30, \"adminEmail\": \"<admin1@mycompany.onmicrosoft.com;admin2@mycompany.onmicrosoft.com>\", \"debug\": true }"
+                            },
+                            {
+                              "solution": "08",
+                              "value": "{ \"tableTeams\": \"s08Teams\", \"reminderDaysLater\": 90, \"adminEmail\": \"<admin1@mycompany.onmicrosoft.com;admin2@mycompany.onmicrosoft.com>\", \"tableUsers\": \"s08Users\", \"endpoint\": \"<nextflowendpoint>\", \"debug\": true }"
+                            },
+                            {
+                              "solution": "09",
+                              "value": "{ \"lastLoginOlderThan\": \"30\", \"reminderInterval\": \"30\", \"remindersCount\": \"2\", \"showMembers\": false, \"tableCampaigns\": \"s09Campaigns\", \"tableGuestsNoTeam\": \"s09GuestsNoTeam\", \"tableGuests\": \"s09Guests\", \"tableOwners\": \"s09Owners\", \"tableRecipients\": \"s09Recipients\", \"tableTeams\": \"s09Teams\", \"flow1Url\": \"<flow1url>\", \"flow2Url\": \"<flow2url>\", \"flow3Url\": \"<flow3url>\", \"submitActionUrl\": \"<flow4submiturl>\", \"sponsorGraphUrl\" : \"https://graph.microsoft.com/beta/users/[upn]/sponsors\", \"adminEmail\": \"<admin1@mycompany.onmicrosoft.com>\", \"debug\": true }"
+                            },
+                            {
+                              "solution": "10",
+                              "value": "{ \"Note\": \"Define the MinimumUnits in the (created) tableLicenses per license row.\", \"tableLicenses\": \"s10Licenses\",\"flow2Url\":\"<flow2url>\",\"showAll\":true,\"adminEmail\": \"<admin1@mycompany.onmicrosoft.com>\", \"debug\": true }"
+                            },
+                            {
+                              "solution": "11",
+                              "value": "{ \"reminderInterval\": \"30\", \"remindersCount\": \"2\", \"tableCampaigns\": \"s11Campaigns\", \"tableOwners\": \"s11Owners\", \"tableRecipients\": \"s11Recipients\", \"tableTeams\": \"s11Teams\", \"flow1Url\": \"<flow1url>\", \"flow2Url\": \"<flow2url>\", \"submitActionUrl\": \"<flow3submiturl>\", \"adminEmail\": \"<admin1@mycompany.onmicrosoft.com>\", \"showMembers\": false, \"debug\": true }"
+                            },
+                            {
+                              "solution": "12",
+                              "value": "{ \"tableTeamNameHistory\": \"s12TeamNameHistory\", \"flow2Url\": \"<flow2url>\", \"adminEmail\": \"<admin1@mycompany.onmicrosoft.com;admin2@mycompany.onmicrosoft.com>\", \"debug\": true }"
+                            },
+                            {
+                              "solution": "13",
+                              "value": "{ \"tableApps\": \"s13Apps\", \"tableOwners\": \"tableOwners\", \"showId\":true, \"threshold\": 500, \"showAll\": true, \"flowOwnersUrl\": \"<flow1url>\", \"flowAdminUrl\": \"<flow2url>\", \"adminEmail\": \"<admin1@mycompany.onmicrosoft.com>\", \"debug\": true }"
+                            },
+                            {
+                              "solution": "14",
+                              "value": "{ \"tableScheduler\": \"s14Control\", \"intervalDays\": 7, \"site\": \"https://<mycompany>.sharepoint.com/sites/Governance\", \"filenametemplate\": \"spo-audit\", \"adminEmail\": \"<admin1@mycompany.onmicrosoft.com>\", \"debug\": true }"
+                            },
+                            {
+                              "solution": "15",
+                              "value": "{ \"tableRemovedUsers\": \"s15RemovedUsers\", \"adminEmail\": \"<admin1@mycompany.onmicrosoft.com>\", \"debug\": true }"
+                            },
+                            {
+                              "solution": "16",
+                              "value": "{ \"storageContainer\": \"userpermissions\", \"adminEmail\": \"<admin1@mycompany.onmicrosoft.com>\", \"debug\": true }"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    "runAfter": {
+                      "foreach": [
+                        "Succeeded"
+                      ]
+                    },
+                    "type": "InitializeVariable"
+                  },
+                  "initresult": {
+                    "inputs": {
+                      "variables": [
+                        {
+                          "name": "result",
+                          "type": "string",
+                          "value": "TeamsAudit: The prerequisites have been done.\n\nTables:\n@{join(variables('tables'),'<br>')}\n\nConfig:\n@{join(variables('config'),'<br>')}\n\n00-prerequisites done.\nConfigure the API connections now!\n"
+                        }
+                      ]
+                    },
+                    "runAfter": {
+                      "foreachsolution": [
+                        "Succeeded"
+                      ]
+                    },
+                    "type": "InitializeVariable"
+                  },
+                  "inittables": {
+                    "inputs": {
+                      "variables": [
+                        {
+                          "name": "tables",
+                          "type": "array",
+                          "value": [
+                            "reportAuditTeam",
+                            "reportAuditTeamUser",
+                            "invitedusers",
+                            "provisionedgroups",
+                            "solutionConfig"
+                          ]
+                        }
+                      ]
+                    },
+                    "runAfter": {},
+                    "type": "InitializeVariable"
+                  }
+                },
+                "contentVersion": "1.0.0.0",
+                "outputs": {},
+                "parameters": {
+                  "$connections": {
+                    "defaultValue": {},
+                    "type": "Object"
+                  }
+                },
+                "triggers": {
+                  "manual": {
+                    "inputs": {},
+                    "kind": "Http",
+                    "type": "Request"
+                  }
+                }
+              },
+              "parameters": {
+                "$connections": {
+                  "value": {
+                    "azuretables": {
+                      "connectionId": "/subscriptions/0c5d1d4f-64e3-47a0-ace1-25494a794cbf/resourceGroups/RG-TeamsAuditProduction/providers/Microsoft.Web/connections/azuretables",
+                      "connectionName": "azuretables",
+                      "connectionProperties": {
+                        "authentication": {
+                          "identity": "/subscriptions/0c5d1d4f-64e3-47a0-ace1-25494a794cbf/resourceGroups/RG-TeamsAuditProduction/providers/Microsoft.ManagedIdentity/userAssignedIdentities/UAMIimolxsgsphoaa",
+                          "type": "ManagedServiceIdentity"
+                        }
+                      },
+                      "id": "/subscriptions/0c5d1d4f-64e3-47a0-ace1-25494a794cbf/providers/Microsoft.Web/locations/westeurope/managedApis/azuretables"
+                    }
+                  }
+                }
+              }
+            },
+            "connections_azuretables_externalid": "[format('/subscriptions/{0}/resourceGroups/{1}/providers/Microsoft.Web/connections/azuretables', parameters('subscriptionid'), parameters('resourcegroup'))]",
+            "connections_office365_externalid": "[format('/subscriptions/{0}/resourceGroups/{1}/providers/Microsoft.Web/connections/office365', parameters('subscriptionid'), parameters('resourcegroup'))]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Logic/workflows",
+              "apiVersion": "2019-05-01",
+              "name": "[parameters('parName')]",
+              "location": "[parameters('location')]",
+              "identity": {
+                "type": "UserAssigned",
+                "userAssignedIdentities": {
+                  "[format('{0}', parameters('UAMI'))]": {}
+                }
+              },
+              "properties": {
+                "state": "Enabled",
+                "definition": "[variables('$fxv#0').definition]",
+                "parameters": {
+                  "$connections": {
+                    "value": {
+                      "azuretables": {
+                        "connectionId": "[variables('connections_azuretables_externalid')]",
+                        "connectionName": "azuretables",
+                        "id": "[format('/subscriptions/{0}/providers/Microsoft.Web/locations/{1}/managedApis/azuretables', parameters('subscriptionid'), parameters('location'))]"
+                      },
+                      "office365": {
+                        "connectionId": "[variables('connections_office365_externalid')]",
+                        "connectionName": "office365",
+                        "id": "[format('/subscriptions/{0}/providers/Microsoft.Web/locations/{1}/managedApis/office365', parameters('subscriptionid'), parameters('location'))]"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'StorageAPIConnection')]",
+        "[resourceId('Microsoft.Resources/deployments', variables('varUAMIname'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2022-09-01",
+      "name": "[variables('varUAMIname')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[variables('varlocation')]"
+          },
+          "name": {
+            "value": "[variables('varUAMIname')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.30.23.60470",
+              "templateHash": "11982386693650789895"
+            }
+          },
+          "parameters": {
+            "name": {
+              "type": "string"
+            },
+            "location": {
+              "type": "string"
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+              "apiVersion": "2023-01-31",
+              "name": "[parameters('name')]",
+              "location": "[parameters('location')]"
+            }
+          ],
+          "outputs": {
+            "objectid": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('name'))]"
+            },
+            "principalid": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('name')), '2023-01-31').principalId]"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2022-09-01",
+      "name": "StorageAPIConnection",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "apiconnectionname": {
+            "value": "azuretables"
+          },
+          "location": {
+            "value": "[variables('varlocation')]"
+          },
+          "storageaccountname": {
+            "value": "[variables('varstorageaccountname')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.30.23.60470",
+              "templateHash": "17677840781477620708"
+            }
+          },
+          "parameters": {
+            "apiconnectionname": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the api connection"
+              }
+            },
+            "location": {
+              "type": "string",
+              "defaultValue": "[resourceGroup().location]",
+              "metadata": {
+                "description": "Location to deploy to - defaults to resource group location"
+              }
+            },
+            "storageaccountname": {
+              "type": "string"
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Web/connections",
+              "apiVersion": "2016-06-01",
+              "name": "[parameters('apiconnectionname')]",
+              "location": "[parameters('location')]",
+              "tags": {
+                "Application Description": "TeamsAudit",
+                "Application Name": "TeamsAudit"
+              },
+              "properties": {
+                "displayName": "[parameters('apiconnectionname')]",
+                "statuses": [
+                  {
+                    "status": "Ready"
+                  }
+                ],
+                "api": {
+                  "name": "[parameters('apiconnectionname')]",
+                  "displayName": "[parameters('apiconnectionname')]",
+                  "id": "[format('{0}/providers/Microsoft.Web/locations/{1}/managedApis/azuretables', subscription().id, parameters('location'))]",
+                  "type": "Microsoft.Web/locations/managedApis"
+                }
+              },
+              "metadata": {
+                "description": "API connection"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2022-09-01",
+      "name": "OfficeAPIConnection",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "apiconnectionname": {
+            "value": "office365"
+          },
+          "location": {
+            "value": "[variables('varlocation')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.30.23.60470",
+              "templateHash": "4113823820340428413"
+            }
+          },
+          "parameters": {
+            "apiconnectionname": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the api connection"
+              }
+            },
+            "location": {
+              "type": "string",
+              "defaultValue": "[resourceGroup().location]",
+              "metadata": {
+                "description": "Location to deploy to - defaults to resource group location"
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Web/connections",
+              "apiVersion": "2016-06-01",
+              "name": "[parameters('apiconnectionname')]",
+              "location": "[parameters('location')]",
+              "tags": {
+                "Application Description": "TeamsAudit",
+                "Application Name": "TeamsAudit"
+              },
+              "properties": {
+                "displayName": "[parameters('apiconnectionname')]",
+                "statuses": [
+                  {
+                    "status": "Ready"
+                  }
+                ],
+                "api": {
+                  "name": "[parameters('apiconnectionname')]",
+                  "displayName": "[parameters('apiconnectionname')]",
+                  "id": "[format('{0}/providers/Microsoft.Web/locations/{1}/managedApis/office365', subscription().id, parameters('location'))]",
+                  "type": "Microsoft.Web/locations/managedApis"
+                }
+              },
+              "metadata": {
+                "description": "API connection"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2022-09-01",
+      "name": "KeyVault",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[variables('varlocation')]"
+          },
+          "Userid": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', variables('varUAMIname')), '2022-09-01').outputs.principalid.value]"
+          },
+          "tenantId": {
+            "value": "[tenant().tenantId]"
+          },
+          "vaultName": {
+            "value": "[variables('varkeyvaultname')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.30.23.60470",
+              "templateHash": "11319061880026558432"
+            }
+          },
+          "parameters": {
+            "vaultName": {
+              "type": "string",
+              "metadata": {
+                "description": "The name of the key vault to be created."
+              }
+            },
+            "location": {
+              "type": "string",
+              "defaultValue": "[resourceGroup().location]",
+              "metadata": {
+                "description": "The location of the resources"
+              }
+            },
+            "tenantId": {
+              "type": "string"
+            },
+            "Userid": {
+              "type": "string"
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.KeyVault/vaults",
+              "apiVersion": "2019-09-01",
+              "name": "[parameters('vaultName')]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "enabledForDeployment": true,
+                "enabledForTemplateDeployment": true,
+                "enabledForDiskEncryption": true,
+                "tenantId": "[parameters('tenantId')]",
+                "enableRbacAuthorization": true,
+                "sku": {
+                  "name": "standard",
+                  "family": "A"
+                }
+              }
+            },
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "name": "[guid(resourceId('Microsoft.KeyVault/vaults', parameters('vaultName')), parameters('Userid'), 'KeyVaultSecretsUser')]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')]",
+                "principalId": "[parameters('Userid')]",
+                "principalType": "ServicePrincipal"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', parameters('vaultName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.KeyVault/vaults/secrets",
+              "apiVersion": "2024-04-01-preview",
+              "name": "[format('{0}/{1}', parameters('vaultName'), 'secret')]",
+              "properties": {
+                "value": "Insert your app secret here"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', parameters('vaultName'))]"
+              ]
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', variables('varUAMIname'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2022-09-01",
+      "name": "OfficeUsersAPIConnection",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "apiconnectionname": {
+            "value": "office365users"
+          },
+          "location": {
+            "value": "[variables('varlocation')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.30.23.60470",
+              "templateHash": "18166436776353028712"
+            }
+          },
+          "parameters": {
+            "apiconnectionname": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the api connection"
+              }
+            },
+            "location": {
+              "type": "string",
+              "defaultValue": "[resourceGroup().location]",
+              "metadata": {
+                "description": "Location to deploy to - defaults to resource group location"
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Web/connections",
+              "apiVersion": "2016-06-01",
+              "name": "[parameters('apiconnectionname')]",
+              "location": "[parameters('location')]",
+              "tags": {
+                "Application Description": "TeamsAudit",
+                "Application Name": "TeamsAudit"
+              },
+              "properties": {
+                "displayName": "[parameters('apiconnectionname')]",
+                "statuses": [
+                  {
+                    "status": "Ready"
+                  }
+                ],
+                "api": {
+                  "name": "[parameters('apiconnectionname')]",
+                  "displayName": "[parameters('apiconnectionname')]",
+                  "id": "[format('{0}/providers/Microsoft.Web/locations/{1}/managedApis/office365users', subscription().id, parameters('location'))]",
+                  "type": "Microsoft.Web/locations/managedApis"
+                }
+              },
+              "metadata": {
+                "description": "API connection"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2022-09-01",
+      "name": "SharepointAPIConnection",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "apiconnectionname": {
+            "value": "sharepointonline"
+          },
+          "location": {
+            "value": "[variables('varlocation')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.30.23.60470",
+              "templateHash": "17899679842329949363"
+            }
+          },
+          "parameters": {
+            "apiconnectionname": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the api connection"
+              }
+            },
+            "location": {
+              "type": "string",
+              "defaultValue": "[resourceGroup().location]",
+              "metadata": {
+                "description": "Location to deploy to - defaults to resource group location"
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Web/connections",
+              "apiVersion": "2016-06-01",
+              "name": "[parameters('apiconnectionname')]",
+              "location": "[parameters('location')]",
+              "tags": {
+                "Application Description": "TeamsAudit",
+                "Application Name": "TeamsAudit"
+              },
+              "properties": {
+                "displayName": "[parameters('apiconnectionname')]",
+                "statuses": [
+                  {
+                    "status": "Ready"
+                  }
+                ],
+                "api": {
+                  "name": "[parameters('apiconnectionname')]",
+                  "displayName": "[parameters('apiconnectionname')]",
+                  "id": "[format('{0}/providers/Microsoft.Web/locations/{1}/managedApis/sharepointonline', subscription().id, parameters('location'))]",
+                  "type": "Microsoft.Web/locations/managedApis"
+                }
+              },
+              "metadata": {
+                "description": "API connection"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2022-09-01",
+      "name": "KeyVaultAPIConnection",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "apiconnectionname": {
+            "value": "keyvault"
+          },
+          "location": {
+            "value": "[variables('varlocation')]"
+          },
+          "vaultName": {
+            "value": "[variables('varkeyvaultname')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.30.23.60470",
+              "templateHash": "1994503721037333046"
+            }
+          },
+          "parameters": {
+            "apiconnectionname": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the api connection"
+              }
+            },
+            "location": {
+              "type": "string",
+              "defaultValue": "[resourceGroup().location]",
+              "metadata": {
+                "description": "Location to deploy to - defaults to resource group location"
+              }
+            },
+            "vaultName": {
+              "type": "string"
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Web/connections",
+              "apiVersion": "2016-06-01",
+              "name": "[parameters('apiconnectionname')]",
+              "location": "[parameters('location')]",
+              "tags": {
+                "Application Description": "TeamsAudit",
+                "Application Name": "TeamsAudit"
+              },
+              "properties": {
+                "displayName": "[parameters('apiconnectionname')]",
+                "statuses": [
+                  {
+                    "status": "Ready"
+                  }
+                ],
+                "api": {
+                  "name": "[parameters('apiconnectionname')]",
+                  "displayName": "[parameters('apiconnectionname')]",
+                  "id": "[format('{0}/providers/Microsoft.Web/locations/{1}/managedApis/keyVault', subscription().id, parameters('location'))]",
+                  "type": "Microsoft.Web/locations/managedApis"
+                },
+                "parameterValueSet": {
+                  "name": "oauthMI",
+                  "values": {
+                    "vaultName": {
+                      "value": "[parameters('vaultName')]"
+                    }
+                  }
+                }
+              },
+              "metadata": {
+                "description": "API connection"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2022-09-01",
+      "name": "AzureMonitorLogsAPIConnection",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "apiconnectionname": {
+            "value": "azuremonitorlogs"
+          },
+          "location": {
+            "value": "[variables('varlocation')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.30.23.60470",
+              "templateHash": "7785048683854553920"
+            }
+          },
+          "parameters": {
+            "apiconnectionname": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the api connection"
+              }
+            },
+            "location": {
+              "type": "string",
+              "defaultValue": "[resourceGroup().location]",
+              "metadata": {
+                "description": "Location to deploy to - defaults to resource group location"
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Web/connections",
+              "apiVersion": "2016-06-01",
+              "name": "[parameters('apiconnectionname')]",
+              "location": "[parameters('location')]",
+              "tags": {
+                "Application Description": "TeamsAudit",
+                "Application Name": "TeamsAudit"
+              },
+              "properties": {
+                "displayName": "[parameters('apiconnectionname')]",
+                "statuses": [
+                  {
+                    "status": "Ready"
+                  }
+                ],
+                "api": {
+                  "name": "[parameters('apiconnectionname')]",
+                  "displayName": "[parameters('apiconnectionname')]",
+                  "id": "[format('{0}/providers/Microsoft.Web/locations/{1}/managedApis/azuremonitorlogs', subscription().id, parameters('location'))]",
+                  "type": "Microsoft.Web/locations/managedApis"
+                },
+                "parameterValueSet": {
+                  "name": "managedIdentityAuth",
+                  "values": {}
+                }
+              },
+              "metadata": {
+                "description": "API connection"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2022-09-01",
+      "name": "OfficeGroupsAPIConnection",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "apiconnectionname": {
+            "value": "office365groups"
+          },
+          "location": {
+            "value": "[variables('varlocation')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.30.23.60470",
+              "templateHash": "11560792784129242425"
+            }
+          },
+          "parameters": {
+            "apiconnectionname": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the api connection"
+              }
+            },
+            "location": {
+              "type": "string",
+              "defaultValue": "[resourceGroup().location]",
+              "metadata": {
+                "description": "Location to deploy to - defaults to resource group location"
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Web/connections",
+              "apiVersion": "2016-06-01",
+              "name": "[parameters('apiconnectionname')]",
+              "location": "[parameters('location')]",
+              "tags": {
+                "Application Description": "TeamsAudit",
+                "Application Name": "TeamsAudit"
+              },
+              "properties": {
+                "displayName": "[parameters('apiconnectionname')]",
+                "statuses": [
+                  {
+                    "status": "Ready"
+                  }
+                ],
+                "api": {
+                  "name": "[parameters('apiconnectionname')]",
+                  "displayName": "[parameters('apiconnectionname')]",
+                  "id": "[format('{0}/providers/Microsoft.Web/locations/{1}/managedApis/office365groups', subscription().id, parameters('location'))]",
+                  "type": "Microsoft.Web/locations/managedApis"
+                }
+              },
+              "metadata": {
+                "description": "API connection"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

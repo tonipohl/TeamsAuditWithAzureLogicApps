@@ -1,0 +1,434 @@
+{
+    "definition": {
+        "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+        "contentVersion": "1.0.0.0",
+        "triggers": {
+            "manual": {
+                "type": "Request",
+                "kind": "Http"
+            }
+        },
+        "actions": {
+            "GetActiveCampaign": {
+                "type": "ApiConnection",
+                "inputs": {
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['azuretables']['connectionId']"
+                        }
+                    },
+                    "method": "get",
+                    "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables/@{encodeURIComponent(variables('config')?['tableCampaigns'])}/entities",
+                    "queries": {
+                        "$filter": "IsActive eq true",
+                        "$select": "RowKey"
+                    }
+                },
+                "runAfter": {
+                    "initAppConfig": [
+                        "Succeeded",
+                        "Failed"
+                    ]
+                }
+            },
+            "GroupLoop": {
+                "type": "Foreach",
+                "foreach": "@body('getgroups')?['value']",
+                "actions": {
+                    "Scope": {
+                        "type": "Scope",
+                        "actions": {
+                            "checkisArchived": {
+                                "type": "If",
+                                "expression": {
+                                    "and": [
+                                        {
+                                            "equals": [
+                                                "@body('getThreadId')?['isArchived']",
+                                                true
+                                            ]
+                                        }
+                                    ]
+                                },
+                                "actions": {},
+                                "else": {
+                                    "actions": {
+                                        "InsertTeam": {
+                                            "type": "ApiConnection",
+                                            "description": "isArchived added - remember to query for false only in this solution",
+                                            "inputs": {
+                                                "host": {
+                                                    "connection": {
+                                                        "name": "@parameters('$connections')['azuretables']['connectionId']"
+                                                    }
+                                                },
+                                                "method": "patch",
+                                                "body": {
+                                                    "Confirmed": false,
+                                                    "Confirmed@odata.type": "Edm.Boolean",
+                                                    "ConfirmedBy": "",
+                                                    "ConfirmedDateTime": "",
+                                                    "DisplayName": "@{item()?['displayName']}",
+                                                    "Id": "@{item()?['id']}",
+                                                    "IsArchived": "@if(equals(body('getThreadId')?['isArchived'],true),true,false)",
+                                                    "IsArchived@odata.type": "Edm.Boolean",
+                                                    "ManageTeamUrl": "https://teams.microsoft.com/_#/teamDashboard//@{body('getThreadId')?['internalId']}/td.members"
+                                                },
+                                                "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables/@{encodeURIComponent(variables('config')?['tableTeams'])}/entities(PartitionKey='@{encodeURIComponent(variables('campaign'))}',RowKey='@{encodeURIComponent(variables('campaign'),'|',item()?['id'])}')"
+                                            }
+                                        },
+                                        "OwnerLoop": {
+                                            "type": "Foreach",
+                                            "foreach": "@body('getowners')?['value']",
+                                            "actions": {
+                                                "InsertConfirmationOwner": {
+                                                    "type": "ApiConnection",
+                                                    "inputs": {
+                                                        "host": {
+                                                            "connection": {
+                                                                "name": "@parameters('$connections')['azuretables']['connectionId']"
+                                                            }
+                                                        },
+                                                        "method": "patch",
+                                                        "body": {
+                                                            "Checked": false,
+                                                            "CheckedDateTime": "",
+                                                            "Confirmed": false,
+                                                            "ConfirmedDateTime": "",
+                                                            "UserId": "@{item()?['id']}",
+                                                            "DisplayName": "@{item()?['displayName']}",
+                                                            "GroupId": "@{items('GroupLoop')?['id']}",
+                                                            "ManageTeamUrl": "https://teams.microsoft.com/_#/teamDashboard//@{body('getThreadId')?['internalId']}/td.members",
+                                                            "RequestId": "@{guid()}",
+                                                            "SentDate": "",
+                                                            "UPN": "@{item()?['userPrincipalName']}"
+                                                        },
+                                                        "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables/@{encodeURIComponent(variables('config')?['tableOwners'])}/entities(PartitionKey='@{encodeURIComponent(variables('campaign'))}',RowKey='@{encodeURIComponent(variables('campaign'),'|',items('GroupLoop')?['id'],'|',items('OwnerLoop')?['userPrincipalName'])}')"
+                                                    }
+                                                },
+                                                "addRecipient": {
+                                                    "type": "ApiConnection",
+                                                    "inputs": {
+                                                        "host": {
+                                                            "connection": {
+                                                                "name": "@parameters('$connections')['azuretables-1']['connectionId']"
+                                                            }
+                                                        },
+                                                        "method": "patch",
+                                                        "body": {
+                                                            "RemindersLeft": "@{variables('config')?['remindersCount']}",
+                                                            "SentDate": "",
+                                                            "UserId": "@{item()?['id']}"
+                                                        },
+                                                        "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables/@{encodeURIComponent(variables('config')?['tableRecipients'])}/entities(PartitionKey='@{encodeURIComponent(variables('campaign'))}',RowKey='@{encodeURIComponent(item()?['userPrincipalName'])}')"
+                                                    },
+                                                    "runAfter": {
+                                                        "InsertConfirmationOwner": [
+                                                            "Succeeded",
+                                                            "Failed"
+                                                        ]
+                                                    }
+                                                }
+                                            },
+                                            "runAfter": {
+                                                "getowners": [
+                                                    "Succeeded",
+                                                    "Failed"
+                                                ]
+                                            }
+                                        },
+                                        "getowners": {
+                                            "type": "Http",
+                                            "description": "Get additional properties to process isArchived=false teams only",
+                                            "inputs": {
+                                                "uri": "https://graph.microsoft.com/v1.0/groups/@{item()?['id']}/owners?$select=userPrincipalName,id,mail,displayName,preferredLanguage",
+                                                "method": "GET",
+                                                "headers": {
+                                                    "Content-Type": "application/json"
+                                                },
+                                                "authentication": {
+                                                    "audience": "https://graph.microsoft.com",
+                                                    "authority": "https://login.microsoft.com",
+                                                    "clientId": "@{variables('appConfig')?['clientId']}",
+                                                    "secret": "@{body('getsecret')?['value']}",
+                                                    "tenant": "@{variables('appConfig')?['tenantId']}",
+                                                    "type": "ActiveDirectoryOAuth"
+                                                }
+                                            },
+                                            "runAfter": {
+                                                "InsertTeam": [
+                                                    "Succeeded"
+                                                ]
+                                            }
+                                        }
+                                    }
+                                },
+                                "runAfter": {
+                                    "getThreadId": [
+                                        "Succeeded",
+                                        "Failed"
+                                    ]
+                                }
+                            },
+                            "getThreadId": {
+                                "type": "Http",
+                                "description": "Get additional properties to process isArchived=false teams only",
+                                "inputs": {
+                                    "uri": "https://graph.microsoft.com/v1.0/groups/@{item()?['id']}/team?$select=internalId,isArchived",
+                                    "method": "GET",
+                                    "headers": {
+                                        "Content-Type": "application/json"
+                                    },
+                                    "authentication": {
+                                        "audience": "https://graph.microsoft.com",
+                                        "authority": "https://login.microsoft.com",
+                                        "clientId": "@{variables('appConfig')?['clientId']}",
+                                        "secret": "@{body('getsecret')?['value']}",
+                                        "tenant": "@{variables('appConfig')?['tenantId']}",
+                                        "type": "ActiveDirectoryOAuth"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "runAfter": {
+                    "GetGroups": [
+                        "Succeeded"
+                    ]
+                }
+            },
+            "RunFlow2": {
+                "type": "Http",
+                "inputs": {
+                    "uri": "@variables('config')?['flow2Url']",
+                    "method": "POST"
+                },
+                "runAfter": {
+                    "GroupLoop": [
+                        "Succeeded",
+                        "Failed"
+                    ]
+                }
+            },
+            "checkTables": {
+                "type": "Scope",
+                "actions": {
+                    "CreateRecipients": {
+                        "type": "ApiConnection",
+                        "inputs": {
+                            "host": {
+                                "connection": {
+                                    "name": "@parameters('$connections')['azuretables']['connectionId']"
+                                }
+                            },
+                            "method": "post",
+                            "body": "@{variables('config')?['tableRecipients']}",
+                            "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables"
+                        },
+                        "runAfter": {
+                            "createOwnersTable": [
+                                "Succeeded",
+                                "Failed"
+                            ]
+                        }
+                    },
+                    "createOwnersTable": {
+                        "type": "ApiConnection",
+                        "inputs": {
+                            "host": {
+                                "connection": {
+                                    "name": "@parameters('$connections')['azuretables']['connectionId']"
+                                }
+                            },
+                            "method": "post",
+                            "body": "@{variables('config')?['tableOwners']}",
+                            "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables"
+                        },
+                        "runAfter": {
+                            "createTeamsTable": [
+                                "Succeeded",
+                                "Failed"
+                            ]
+                        }
+                    },
+                    "createTeamsTable": {
+                        "type": "ApiConnection",
+                        "inputs": {
+                            "host": {
+                                "connection": {
+                                    "name": "@parameters('$connections')['azuretables']['connectionId']"
+                                }
+                            },
+                            "method": "post",
+                            "body": "@{variables('config')?['tableTeams']}",
+                            "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables"
+                        }
+                    }
+                },
+                "runAfter": {
+                    "initCampaign": [
+                        "Succeeded"
+                    ]
+                }
+            },
+            "getAppConfig": {
+                "type": "ApiConnection",
+                "inputs": {
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['azuretables']['connectionId']"
+                        }
+                    },
+                    "method": "get",
+                    "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables/@{encodeURIComponent('solutionConfig')}/entities(PartitionKey='@{encodeURIComponent('app')}',RowKey='@{encodeURIComponent('config')}')"
+                },
+                "runAfter": {
+                    "initConfig": [
+                        "Succeeded"
+                    ]
+                }
+            },
+            "getConfig": {
+                "type": "ApiConnection",
+                "inputs": {
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['azuretables']['connectionId']"
+                        }
+                    },
+                    "method": "get",
+                    "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables/@{encodeURIComponent('solutionConfig')}/entities(PartitionKey='@{encodeURIComponent('11')}',RowKey='@{encodeURIComponent('config')}')"
+                },
+                "runAfter": {}
+            },
+            "getsecret": {
+                "type": "ApiConnection",
+                "inputs": {
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['keyvault']['connectionId']"
+                        }
+                    },
+                    "method": "get",
+                    "path": "/secrets/@{encodeURIComponent('secret')}/value"
+                },
+                "runAfter": {
+                    "checkTables": [
+                        "Succeeded",
+                        "Failed"
+                    ]
+                }
+            },
+            "initAppConfig": {
+                "type": "InitializeVariable",
+                "inputs": {
+                    "variables": [
+                        {
+                            "name": "appConfig",
+                            "type": "object",
+                            "value": "@json(body('getAppConfig')?['Value'])"
+                        }
+                    ]
+                },
+                "runAfter": {
+                    "getAppConfig": [
+                        "Succeeded"
+                    ]
+                }
+            },
+            "initCampaign": {
+                "type": "InitializeVariable",
+                "inputs": {
+                    "variables": [
+                        {
+                            "name": "campaign",
+                            "type": "string",
+                            "value": "@{body('GetActiveCampaign')?['value'][0]?['RowKey']}"
+                        }
+                    ]
+                },
+                "runAfter": {
+                    "GetActiveCampaign": [
+                        "Succeeded"
+                    ]
+                }
+            },
+            "initConfig": {
+                "type": "InitializeVariable",
+                "inputs": {
+                    "variables": [
+                        {
+                            "name": "config",
+                            "type": "object",
+                            "value": "@json(body('getConfig')?['Value'])"
+                        }
+                    ]
+                },
+                "runAfter": {
+                    "getConfig": [
+                        "Succeeded"
+                    ]
+                }
+            },
+            "GetGroups": {
+                "type": "Http",
+                "description": "Get additional properties to process isArchived=false teams only",
+                "inputs": {
+                    "uri": "https://graph.microsoft.com/v1.0/groups?$filter=(groupTypes/any(@{concat('s:s',' eq ')}'Unified'))&$select=id,displayName,assignedLabels,groupTypes",
+                    "method": "GET",
+                    "headers": {
+                        "Content-Type": "application/json"
+                    },
+                    "authentication": {
+                        "audience": "https://graph.microsoft.com",
+                        "authority": "https://login.microsoft.com",
+                        "clientId": "@{variables('appConfig')?['clientId']}",
+                        "secret": "@{body('getsecret')?['value']}",
+                        "tenant": "@{variables('appConfig')?['tenantId']}",
+                        "type": "ActiveDirectoryOAuth"
+                    }
+                },
+                "runAfter": {
+                    "getsecret": [
+                        "Succeeded"
+                    ]
+                }
+            }
+        },
+        "outputs": {},
+        "parameters": {
+            "$connections": {
+                "type": "Object",
+                "defaultValue": {}
+            }
+        }
+    },
+    "parameters": {
+        "$connections": {
+            "value": {
+                "azuretables": {
+                    "id": "/subscriptions/<your-subscription-id>/providers/Microsoft.Web/locations/westeurope/managedApis/azuretables",
+                    "connectionId": "/subscriptions/<your-subscription-id>/resourceGroups/RG-TeamsAudit/providers/Microsoft.Web/connections/azuretables",
+                    "connectionName": "azuretables"
+                },
+                "azuretables-1": {
+                    "id": "/subscriptions/<your-subscription-id>/providers/Microsoft.Web/locations/southcentralus/managedApis/azuretables",
+                    "connectionId": "/subscriptions/<your-subscription-id>/resourceGroups/RG-TeamsAudit/providers/Microsoft.Web/connections/azuretables",
+                    "connectionName": "azuretables"
+                },
+                "keyvault": {
+                    "id": "/subscriptions/<your-subscription-id>/providers/Microsoft.Web/locations/southcentralus/managedApis/keyvault",
+                    "connectionId": "/subscriptions/<your-subscription-id>/resourceGroups/RG-TeamsAudit/providers/Microsoft.Web/connections/keyvault",
+                    "connectionName": "keyvault",
+                    "connectionProperties": {
+                        "authentication": {
+                            "type": "ManagedServiceIdentity",
+                            "identity": "/subscriptions/<your-subscription-id>/resourceGroups/RG-TeamsAudit/providers/Microsoft.ManagedIdentity/userAssignedIdentities/UAMIhcjzsvcfxg"
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,232 @@
+{
+    "definition": {
+        "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+        "contentVersion": "1.0.0.0",
+        "triggers": {
+            "Recurrence": {
+                "type": "Recurrence",
+                "recurrence": {
+                    "frequency": "Day",
+                    "interval": 1,
+                    "schedule": {
+                        "hours": [
+                            "7"
+                        ]
+                    }
+                }
+            }
+        },
+        "actions": {
+            "CheckRunReminder": {
+                "type": "If",
+                "expression": {
+                    "and": [
+                        {
+                            "equals": [
+                                "@variables('canRunReminder')",
+                                true
+                            ]
+                        }
+                    ]
+                },
+                "actions": {
+                    "CheckReminderLessThanMax": {
+                        "type": "If",
+                        "description": "Maximum reminders sent?",
+                        "expression": {
+                            "and": [
+                                {
+                                    "lessOrEquals": [
+                                        "@variables('currentReminderCount')",
+                                        "@variables('maxReminderCount')"
+                                    ]
+                                }
+                            ]
+                        },
+                        "actions": {
+                            "TriggerFlow2": {
+                                "type": "Http",
+                                "inputs": {
+                                    "uri": "@{variables('config')?['flow2Url']}",
+                                    "method": "POST"
+                                },
+                                "runAfter": {
+                                    "updateNextReminderData": [
+                                        "Succeeded"
+                                    ]
+                                }
+                            },
+                            "updateNextReminderData": {
+                                "type": "ApiConnection",
+                                "description": "Calculate the next reminder date and run flow Send emails",
+                                "inputs": {
+                                    "host": {
+                                        "connection": {
+                                            "name": "@parameters('$connections')['azuretables']['connectionId']"
+                                        }
+                                    },
+                                    "method": "patch",
+                                    "body": {
+                                        "CurrentReminderCount": "@add(variables('currentReminderCount'), 1)",
+                                        "NextReminderDate": "@{addDays(utcNow(), int(variables('config')?['reminderInterval'] ))}"
+                                    },
+                                    "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables/@{encodeURIComponent(variables('config')?['tableCampaigns'])}/entities(PartitionKey='@{encodeURIComponent(variables('campaign')?['PartitionKey'])}',RowKey='@{encodeURIComponent(variables('campaign')?['RowKey'])}')"
+                                }
+                            }
+                        },
+                        "else": {
+                            "actions": {}
+                        }
+                    }
+                },
+                "else": {
+                    "actions": {}
+                },
+                "runAfter": {
+                    "initMaxReminderCount": [
+                        "Succeeded"
+                    ]
+                }
+            },
+            "getCampaign": {
+                "type": "ApiConnection",
+                "inputs": {
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['azuretables']['connectionId']"
+                        }
+                    },
+                    "method": "get",
+                    "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables/@{encodeURIComponent(variables('config')?['tableCampaigns'])}/entities",
+                    "queries": {
+                        "$filter": "IsActive eq true"
+                    }
+                },
+                "runAfter": {
+                    "initConfig": [
+                        "Succeeded"
+                    ]
+                }
+            },
+            "getConfig": {
+                "type": "ApiConnection",
+                "inputs": {
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['azuretables']['connectionId']"
+                        }
+                    },
+                    "method": "get",
+                    "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables/@{encodeURIComponent('solutionConfig')}/entities(PartitionKey='@{encodeURIComponent('11')}',RowKey='@{encodeURIComponent('config')}')"
+                },
+                "runAfter": {}
+            },
+            "initCampaign": {
+                "type": "InitializeVariable",
+                "description": "Data for the active campaign",
+                "inputs": {
+                    "variables": [
+                        {
+                            "name": "campaign",
+                            "type": "object",
+                            "value": "@body('getCampaign')?['value'][0]"
+                        }
+                    ]
+                },
+                "runAfter": {
+                    "getCampaign": [
+                        "Succeeded"
+                    ]
+                }
+            },
+            "initCanRunReminder": {
+                "type": "InitializeVariable",
+                "description": "Is Today the date for the next reminder? True or False.",
+                "inputs": {
+                    "variables": [
+                        {
+                            "name": "canRunReminder",
+                            "type": "boolean",
+                            "value": "@equals(formatDateTime(variables('campaign')?['NextReminderDate'], 'yyyy-MM-dd'), formatDateTime(utcNow(), 'yyyy-MM-dd'))"
+                        }
+                    ]
+                },
+                "runAfter": {
+                    "initCampaign": [
+                        "Succeeded"
+                    ]
+                }
+            },
+            "initConfig": {
+                "type": "InitializeVariable",
+                "inputs": {
+                    "variables": [
+                        {
+                            "name": "config",
+                            "type": "object",
+                            "value": "@json(body('getConfig')?['Value'])"
+                        }
+                    ]
+                },
+                "runAfter": {
+                    "getConfig": [
+                        "Succeeded"
+                    ]
+                }
+            },
+            "initCurrentReminderCount": {
+                "type": "InitializeVariable",
+                "inputs": {
+                    "variables": [
+                        {
+                            "name": "currentReminderCount",
+                            "type": "integer",
+                            "value": "@variables('campaign')?['CurrentReminderCount']"
+                        }
+                    ]
+                },
+                "runAfter": {
+                    "initCanRunReminder": [
+                        "Succeeded"
+                    ]
+                }
+            },
+            "initMaxReminderCount": {
+                "type": "InitializeVariable",
+                "description": "How many reminders shall be sent?",
+                "inputs": {
+                    "variables": [
+                        {
+                            "name": "maxReminderCount",
+                            "type": "integer",
+                            "value": "@int(variables('config')?['remindersCount'])"
+                        }
+                    ]
+                },
+                "runAfter": {
+                    "initCurrentReminderCount": [
+                        "Succeeded"
+                    ]
+                }
+            }
+        },
+        "outputs": {},
+        "parameters": {
+            "$connections": {
+                "type": "Object",
+                "defaultValue": {}
+            }
+        }
+    },
+    "parameters": {
+        "$connections": {
+            "value": {
+                "azuretables": {
+                    "id": "/subscriptions/<your-subscription-id>/providers/Microsoft.Web/locations/southcentralus/managedApis/azuretables",
+                    "connectionId": "/subscriptions/<your-subscription-id>/resourceGroups/RG-TeamsAudit/providers/Microsoft.Web/connections/azuretables",
+                    "connectionName": "azuretables"
+                }
+            }
+        }
+    }
+}

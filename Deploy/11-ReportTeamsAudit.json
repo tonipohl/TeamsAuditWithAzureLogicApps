@@ -1,0 +1,2296 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.30.23.60470",
+      "templateHash": "9396726082489979725"
+    }
+  },
+  "variables": {
+    "varUAMIname": "[substring(format('UAMI{0}', uniqueString(resourceGroup().name, subscription().id)), 0, 14)]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2022-09-01",
+      "name": "11-01-ReportTeamsAudit-NewCampaign",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "UAMI": {
+            "value": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('varUAMIname'))]"
+          },
+          "UAMIname": {
+            "value": "[variables('varUAMIname')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.30.23.60470",
+              "templateHash": "4048472079307416662"
+            }
+          },
+          "parameters": {
+            "UAMIname": {
+              "type": "string"
+            },
+            "UAMI": {
+              "type": "string"
+            }
+          },
+          "variables": {
+            "$fxv#0": {
+              "definition": {
+                "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+                "actions": {
+                  "AddNewCampaign": {
+                    "inputs": {
+                      "body": {
+                        "CurrentReminderCount": 1,
+                        "IsActive": true,
+                        "NextReminderDate": "@addDays(utcNow(), int(variables('config')?['reminderInterval']))",
+                        "NextReminderDate@odata.type": "Edm.DateTime",
+                        "PartitionKey": "@{variables('iteration')}",
+                        "RowKey": "@{variables('year')}-@{variables('iteration')}",
+                        "Year": "@{variables('year')}"
+                      },
+                      "host": {
+                        "connection": {
+                          "name": "@parameters('$connections')['azuretables']['connectionId']"
+                        }
+                      },
+                      "method": "post",
+                      "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables/@{encodeURIComponent(variables('config')?['tableCampaigns'])}/entities"
+                    },
+                    "runAfter": {
+                      "initIteration": [
+                        "Succeeded"
+                      ]
+                    },
+                    "type": "ApiConnection"
+                  },
+                  "CampaigneLoop": {
+                    "actions": {
+                      "InvalidateCampaignes": {
+                        "inputs": {
+                          "body": {
+                            "IsActive": false
+                          },
+                          "host": {
+                            "connection": {
+                              "name": "@parameters('$connections')['azuretables']['connectionId']"
+                            }
+                          },
+                          "method": "patch",
+                          "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables/@{encodeURIComponent(variables('config')?['tableCampaigns'])}/entities(PartitionKey='@{encodeURIComponent(items('CampaigneLoop')?['PartitionKey'])}',RowKey='@{encodeURIComponent(items('CampaigneLoop')?['RowKey'])}')"
+                        },
+                        "runAfter": {},
+                        "type": "ApiConnection"
+                      }
+                    },
+                    "foreach": "@body('getCampaigns')?['value']",
+                    "runAfter": {
+                      "getCampaigns": [
+                        "Succeeded"
+                      ]
+                    },
+                    "type": "Foreach"
+                  },
+                  "GetCurrentYearCampaigns": {
+                    "inputs": {
+                      "host": {
+                        "connection": {
+                          "name": "@parameters('$connections')['azuretables']['connectionId']"
+                        }
+                      },
+                      "method": "get",
+                      "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables/@{encodeURIComponent(variables('config')?['tableCampaigns'])}/entities",
+                      "queries": {
+                        "$filter": "Year eq '@{variables('year')}'"
+                      }
+                    },
+                    "runAfter": {
+                      "CampaigneLoop": [
+                        "Succeeded"
+                      ]
+                    },
+                    "type": "ApiConnection"
+                  },
+                  "Response": {
+                    "inputs": {
+                      "body": {
+                        "campaign": "@{variables('year')}-@{variables('iteration')}",
+                        "startDate": "@{utcNow()}"
+                      },
+                      "headers": {
+                        "Content-Type": "text/json"
+                      },
+                      "statusCode": 200
+                    },
+                    "kind": "Http",
+                    "runAfter": {
+                      "RunFlow1": [
+                        "Succeeded"
+                      ]
+                    },
+                    "type": "Response"
+                  },
+                  "RunFlow1": {
+                    "inputs": {
+                      "method": "POST",
+                      "uri": "@variables('config')?['flow1Url']"
+                    },
+                    "runAfter": {
+                      "sendNotification": [
+                        "Succeeded"
+                      ]
+                    },
+                    "type": "Http"
+                  },
+                  "createTable": {
+                    "inputs": {
+                      "body": "@{variables('config')?['tableCampaigns']}",
+                      "host": {
+                        "connection": {
+                          "name": "@parameters('$connections')['azuretables']['connectionId']"
+                        }
+                      },
+                      "method": "post",
+                      "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables"
+                    },
+                    "runAfter": {
+                      "initYear": [
+                        "Succeeded"
+                      ]
+                    },
+                    "type": "ApiConnection"
+                  },
+                  "getCampaigns": {
+                    "inputs": {
+                      "host": {
+                        "connection": {
+                          "name": "@parameters('$connections')['azuretables']['connectionId']"
+                        }
+                      },
+                      "method": "get",
+                      "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables/@{encodeURIComponent(variables('config')?['tableCampaigns'])}/entities",
+                      "queries": {
+                        "$filter": "IsActive eq true"
+                      }
+                    },
+                    "runAfter": {
+                      "createTable": [
+                        "Succeeded",
+                        "Failed"
+                      ]
+                    },
+                    "type": "ApiConnection"
+                  },
+                  "getConfig": {
+                    "inputs": {
+                      "host": {
+                        "connection": {
+                          "name": "@parameters('$connections')['azuretables']['connectionId']"
+                        }
+                      },
+                      "method": "get",
+                      "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables/@{encodeURIComponent('solutionConfig')}/entities(PartitionKey='@{encodeURIComponent('11')}',RowKey='@{encodeURIComponent('config')}')"
+                    },
+                    "runAfter": {},
+                    "type": "ApiConnection"
+                  },
+                  "initConfig": {
+                    "inputs": {
+                      "variables": [
+                        {
+                          "name": "config",
+                          "type": "object",
+                          "value": "@json(body('getConfig')?['Value'])"
+                        }
+                      ]
+                    },
+                    "runAfter": {
+                      "getConfig": [
+                        "Succeeded"
+                      ]
+                    },
+                    "type": "InitializeVariable"
+                  },
+                  "initIteration": {
+                    "inputs": {
+                      "variables": [
+                        {
+                          "name": "iteration",
+                          "type": "integer",
+                          "value": "@add(length(body('GetCurrentYearCampaigns')?['value']), 1)"
+                        }
+                      ]
+                    },
+                    "runAfter": {
+                      "GetCurrentYearCampaigns": [
+                        "Succeeded"
+                      ]
+                    },
+                    "type": "InitializeVariable"
+                  },
+                  "initYear": {
+                    "inputs": {
+                      "variables": [
+                        {
+                          "name": "year",
+                          "type": "string",
+                          "value": "@{formatDateTime(utcNow(), 'yyyy')}"
+                        }
+                      ]
+                    },
+                    "runAfter": {
+                      "initConfig": [
+                        "Succeeded"
+                      ]
+                    },
+                    "type": "InitializeVariable"
+                  },
+                  "sendNotification": {
+                    "inputs": {
+                      "body": {
+                        "Body": "<p>&nbsp;&nbsp;\"CurrentReminderCount\": 1,<br>\n &nbsp;\"IsActive\": true,<br>\n &nbsp;\"NextReminderDate\": @{addDays(utcNow(), int(variables('config')?['reminderInterval']))},<br>\n &nbsp;\"PartitionKey\": \"@{variables('iteration')}\",<br>\n &nbsp;\"RowKey\": \"@{variables('year')}-@{variables('iteration')}\",<br>\n &nbsp;\"Year\": \"@{variables('year')}\"</p>",
+                        "Importance": "Normal",
+                        "Subject": "GT365 11: New Audit started: @{variables('year')}-@{variables('iteration')}",
+                        "To": "@{variables('config')?['adminEmail']}"
+                      },
+                      "host": {
+                        "connection": {
+                          "name": "@parameters('$connections')['office365']['connectionId']"
+                        }
+                      },
+                      "method": "post",
+                      "path": "/v2/Mail"
+                    },
+                    "runAfter": {
+                      "AddNewCampaign": [
+                        "Succeeded"
+                      ]
+                    },
+                    "type": "ApiConnection"
+                  }
+                },
+                "contentVersion": "1.0.0.0",
+                "outputs": {},
+                "parameters": {
+                  "$connections": {
+                    "defaultValue": {},
+                    "type": "Object"
+                  }
+                },
+                "triggers": {
+                  "manual": {
+                    "inputs": {},
+                    "kind": "Http",
+                    "type": "Request"
+                  }
+                }
+              },
+              "parameters": {
+                "$connections": {
+                  "value": {
+                    "azuretables": {
+                      "connectionId": "/subscriptions/0c5d1d4f-64e3-47a0-ace1-25494a794cbf/resourceGroups/RG-GT365Demo/providers/Microsoft.Web/connections/azuretables",
+                      "connectionName": "azuretables",
+                      "id": "/subscriptions/0c5d1d4f-64e3-47a0-ace1-25494a794cbf/providers/Microsoft.Web/locations/westeurope/managedApis/azuretables"
+                    },
+                    "office365": {
+                      "connectionId": "/subscriptions/0c5d1d4f-64e3-47a0-ace1-25494a794cbf/resourceGroups/RG-GT365Demo/providers/Microsoft.Web/connections/office365",
+                      "connectionName": "office365",
+                      "id": "/subscriptions/0c5d1d4f-64e3-47a0-ace1-25494a794cbf/providers/Microsoft.Web/locations/westeurope/managedApis/office365"
+                    }
+                  }
+                }
+              }
+            },
+            "subscriptionid": "[subscription().subscriptionId]",
+            "resourcegroup": "[resourceGroup().name]",
+            "location": "[resourceGroup().location]",
+            "connections_azuretables_externalid": "[format('/subscriptions/{0}/resourceGroups/{1}/providers/Microsoft.Web/connections/azuretables', variables('subscriptionid'), variables('resourcegroup'))]",
+            "workflows_09_TeamsOwnersGuestAudit_00_name": "11-01-ReportTeamsAudit-NewCampaign"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Logic/workflows",
+              "apiVersion": "2019-05-01",
+              "name": "[variables('workflows_09_TeamsOwnersGuestAudit_00_name')]",
+              "location": "[variables('location')]",
+              "identity": {
+                "type": "UserAssigned",
+                "userAssignedIdentities": {
+                  "[format('{0}', parameters('UAMI'))]": {}
+                }
+              },
+              "properties": {
+                "state": "Enabled",
+                "definition": "[variables('$fxv#0').definition]",
+                "parameters": {
+                  "$connections": {
+                    "value": {
+                      "azuretables": {
+                        "connectionId": "[variables('connections_azuretables_externalid')]",
+                        "connectionName": "azuretables",
+                        "id": "[format('/subscriptions/{0}/providers/Microsoft.Web/locations/{1}/managedApis/azuretables', variables('subscriptionid'), variables('location'))]"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2022-09-01",
+      "name": "11-02-ReportTeamsAudit-RunTeams",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "UAMI": {
+            "value": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('varUAMIname'))]"
+          },
+          "UAMIname": {
+            "value": "[variables('varUAMIname')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.30.23.60470",
+              "templateHash": "14904000355066742954"
+            }
+          },
+          "parameters": {
+            "UAMIname": {
+              "type": "string"
+            },
+            "UAMI": {
+              "type": "string"
+            }
+          },
+          "variables": {
+            "$fxv#0": {
+              "definition": {
+                "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+                "actions": {
+                  "GetActiveCampaign": {
+                    "inputs": {
+                      "host": {
+                        "connection": {
+                          "name": "@parameters('$connections')['azuretables']['connectionId']"
+                        }
+                      },
+                      "method": "get",
+                      "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables/@{encodeURIComponent(variables('config')?['tableCampaigns'])}/entities",
+                      "queries": {
+                        "$filter": "IsActive eq true",
+                        "$select": "RowKey"
+                      }
+                    },
+                    "runAfter": {
+                      "initAppConfig": [
+                        "Succeeded",
+                        "Failed"
+                      ]
+                    },
+                    "type": "ApiConnection"
+                  },
+                  "GetGroups": {
+                    "inputs": {
+                      "host": {
+                        "connection": {
+                          "name": "@parameters('$connections')['azuretables']['connectionId']"
+                        }
+                      },
+                      "method": "get",
+                      "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables/@{encodeURIComponent('groupsstatistics')}/entities",
+                      "queries": {
+                        "$filter": "PartitionKey eq 'Team'",
+                        "$select": "RowKey,DisplayName,OwnersMail"
+                      }
+                    },
+                    "runAfter": {
+                      "getsecret": [
+                        "Succeeded"
+                      ]
+                    },
+                    "type": "ApiConnection"
+                  },
+                  "GroupLoop": {
+                    "actions": {
+                      "Scope": {
+                        "actions": {
+                          "checkisArchived": {
+                            "actions": {},
+                            "else": {
+                              "actions": {
+                                "InsertTeam": {
+                                  "description": "isArchived added - remember to query for false only in this solution",
+                                  "inputs": {
+                                    "body": {
+                                      "Confirmed": false,
+                                      "Confirmed@odata.type": "Edm.Boolean",
+                                      "ConfirmedBy": "",
+                                      "ConfirmedDateTime": "",
+                                      "DisplayName": "@{items('GroupLoop')?['DisplayName']}",
+                                      "Id": "@{items('GroupLoop')?['RowKey']}",
+                                      "IsArchived": "@if(equals(body('getThreadId')?['isArchived'],true),true,false)",
+                                      "IsArchived@odata.type": "Edm.Boolean",
+                                      "ManageTeamUrl": "https://teams.microsoft.com/_#/teamDashboard/@{items('GroupLoop')?['DisplayName']}/@{body('getThreadId')?['internalId']}/td.members",
+                                      "OwnersMail": "@{items('GroupLoop')?['OwnersMail']}"
+                                    },
+                                    "host": {
+                                      "connection": {
+                                        "name": "@parameters('$connections')['azuretables']['connectionId']"
+                                      }
+                                    },
+                                    "method": "patch",
+                                    "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables/@{encodeURIComponent(variables('config')?['tableTeams'])}/entities(PartitionKey='@{encodeURIComponent(variables('campaign'))}',RowKey='@{encodeURIComponent(variables('campaign'),'|',items('GroupLoop')?['RowKey'])}')"
+                                  },
+                                  "runAfter": {},
+                                  "type": "ApiConnection"
+                                },
+                                "OwnerLoop": {
+                                  "actions": {
+                                    "InsertConfirmationOwner": {
+                                      "inputs": {
+                                        "body": {
+                                          "Checked": false,
+                                          "CheckedDateTime": "",
+                                          "Confirmed": false,
+                                          "ConfirmedDateTime": "",
+                                          "DisplayName": "@{items('GroupLoop')?['DisplayName']}",
+                                          "GroupId": "@{items('GroupLoop')?['RowKey']}",
+                                          "ManageTeamUrl": "https://teams.microsoft.com/_#/teamDashboard/@{items('GroupLoop')?['DisplayName']}/@{body('getThreadId')?['internalId']}/td.members",
+                                          "RequestId": "@{guid()}",
+                                          "SentDate": "",
+                                          "UPN": "@{items('OwnerLoop')}"
+                                        },
+                                        "host": {
+                                          "connection": {
+                                            "name": "@parameters('$connections')['azuretables']['connectionId']"
+                                          }
+                                        },
+                                        "method": "patch",
+                                        "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables/@{encodeURIComponent(variables('config')?['tableOwners'])}/entities(PartitionKey='@{encodeURIComponent(variables('campaign'))}',RowKey='@{encodeURIComponent(variables('campaign'),'|',items('GroupLoop')?['RowKey'],'|',items('OwnerLoop'))}')"
+                                      },
+                                      "runAfter": {},
+                                      "type": "ApiConnection"
+                                    },
+                                    "InsertEmailRecipient": {
+                                      "inputs": {
+                                        "body": {
+                                          "RemindersLeft": "@{variables('config')?['remindersCount']}",
+                                          "SentDate": ""
+                                        },
+                                        "host": {
+                                          "connection": {
+                                            "name": "@parameters('$connections')['azuretables']['connectionId']"
+                                          }
+                                        },
+                                        "method": "patch",
+                                        "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables/@{encodeURIComponent(variables('config')?['tableRecipients'])}/entities(PartitionKey='@{encodeURIComponent(variables('campaign'))}',RowKey='@{encodeURIComponent(items('OwnerLoop'))}')"
+                                      },
+                                      "runAfter": {
+                                        "InsertConfirmationOwner": [
+                                          "Succeeded",
+                                          "Failed"
+                                        ]
+                                      },
+                                      "type": "ApiConnection"
+                                    }
+                                  },
+                                  "foreach": "@split(toLower(trim(items('GroupLoop')?['OwnersMail'])), ';')",
+                                  "runAfter": {
+                                    "InsertTeam": [
+                                      "Succeeded"
+                                    ]
+                                  },
+                                  "type": "Foreach"
+                                }
+                              }
+                            },
+                            "expression": {
+                              "and": [
+                                {
+                                  "equals": [
+                                    "@body('getThreadId')?['isArchived']",
+                                    true
+                                  ]
+                                }
+                              ]
+                            },
+                            "runAfter": {
+                              "getThreadId": [
+                                "Succeeded"
+                              ]
+                            },
+                            "type": "If"
+                          },
+                          "getThreadId": {
+                            "description": "Get additional properties to process isArchived=false teams only",
+                            "inputs": {
+                              "authentication": {
+                                "audience": "https://graph.microsoft.com",
+                                "authority": "https://login.microsoft.com",
+                                "clientId": "@{variables('appConfig')?['clientId']}",
+                                "secret": "@{body('getsecret')?['value']}",
+                                "tenant": "@{variables('appConfig')?['tenantId']}",
+                                "type": "ActiveDirectoryOAuth"
+                              },
+                              "headers": {
+                                "Content-Type": "application/json"
+                              },
+                              "method": "GET",
+                              "uri": "https://graph.microsoft.com/v1.0/groups/@{items('GroupLoop')?['RowKey']}/team?$select=internalId,isArchived"
+                            },
+                            "runAfter": {},
+                            "type": "Http"
+                          }
+                        },
+                        "runAfter": {},
+                        "type": "Scope"
+                      }
+                    },
+                    "foreach": "@body('GetGroups')?['value']",
+                    "runAfter": {
+                      "GetGroups": [
+                        "Succeeded"
+                      ]
+                    },
+                    "type": "Foreach"
+                  },
+                  "RunFlow2": {
+                    "inputs": {
+                      "method": "POST",
+                      "uri": "@variables('config')?['flow2Url']"
+                    },
+                    "runAfter": {
+                      "GroupLoop": [
+                        "Succeeded",
+                        "Failed"
+                      ]
+                    },
+                    "type": "Http"
+                  },
+                  "checkTables": {
+                    "actions": {
+                      "CreateRecipients": {
+                        "inputs": {
+                          "body": "@{variables('config')?['tableRecipients']}",
+                          "host": {
+                            "connection": {
+                              "name": "@parameters('$connections')['azuretables']['connectionId']"
+                            }
+                          },
+                          "method": "post",
+                          "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables"
+                        },
+                        "runAfter": {
+                          "createOwnersTable": [
+                            "Succeeded",
+                            "Failed"
+                          ]
+                        },
+                        "type": "ApiConnection"
+                      },
+                      "createOwnersTable": {
+                        "inputs": {
+                          "body": "@{variables('config')?['tableOwners']}",
+                          "host": {
+                            "connection": {
+                              "name": "@parameters('$connections')['azuretables']['connectionId']"
+                            }
+                          },
+                          "method": "post",
+                          "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables"
+                        },
+                        "runAfter": {
+                          "createTeamsTable": [
+                            "Succeeded",
+                            "Failed"
+                          ]
+                        },
+                        "type": "ApiConnection"
+                      },
+                      "createTeamsTable": {
+                        "inputs": {
+                          "body": "@{variables('config')?['tableTeams']}",
+                          "host": {
+                            "connection": {
+                              "name": "@parameters('$connections')['azuretables']['connectionId']"
+                            }
+                          },
+                          "method": "post",
+                          "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables"
+                        },
+                        "runAfter": {},
+                        "type": "ApiConnection"
+                      }
+                    },
+                    "runAfter": {
+                      "initCampaign": [
+                        "Succeeded"
+                      ]
+                    },
+                    "type": "Scope"
+                  },
+                  "getAppConfig": {
+                    "inputs": {
+                      "host": {
+                        "connection": {
+                          "name": "@parameters('$connections')['azuretables']['connectionId']"
+                        }
+                      },
+                      "method": "get",
+                      "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables/@{encodeURIComponent('solutionConfig')}/entities(PartitionKey='@{encodeURIComponent('app')}',RowKey='@{encodeURIComponent('config')}')"
+                    },
+                    "runAfter": {
+                      "initConfig": [
+                        "Succeeded"
+                      ]
+                    },
+                    "type": "ApiConnection"
+                  },
+                  "getConfig": {
+                    "inputs": {
+                      "host": {
+                        "connection": {
+                          "name": "@parameters('$connections')['azuretables']['connectionId']"
+                        }
+                      },
+                      "method": "get",
+                      "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables/@{encodeURIComponent('solutionConfig')}/entities(PartitionKey='@{encodeURIComponent('11')}',RowKey='@{encodeURIComponent('config')}')"
+                    },
+                    "runAfter": {},
+                    "type": "ApiConnection"
+                  },
+                  "getsecret": {
+                    "inputs": {
+                      "host": {
+                        "connection": {
+                          "name": "@parameters('$connections')['keyvault']['connectionId']"
+                        }
+                      },
+                      "method": "get",
+                      "path": "/secrets/@{encodeURIComponent('secret')}/value"
+                    },
+                    "runAfter": {
+                      "checkTables": [
+                        "Succeeded",
+                        "Failed"
+                      ]
+                    },
+                    "type": "ApiConnection"
+                  },
+                  "initAppConfig": {
+                    "inputs": {
+                      "variables": [
+                        {
+                          "name": "appConfig",
+                          "type": "object",
+                          "value": "@json(body('getAppConfig')?['Value'])"
+                        }
+                      ]
+                    },
+                    "runAfter": {
+                      "getAppConfig": [
+                        "Succeeded"
+                      ]
+                    },
+                    "type": "InitializeVariable"
+                  },
+                  "initCampaign": {
+                    "inputs": {
+                      "variables": [
+                        {
+                          "name": "campaign",
+                          "type": "string",
+                          "value": "@{body('GetActiveCampaign')?['value'][0]?['RowKey']}"
+                        }
+                      ]
+                    },
+                    "runAfter": {
+                      "GetActiveCampaign": [
+                        "Succeeded"
+                      ]
+                    },
+                    "type": "InitializeVariable"
+                  },
+                  "initConfig": {
+                    "inputs": {
+                      "variables": [
+                        {
+                          "name": "config",
+                          "type": "object",
+                          "value": "@json(body('getConfig')?['Value'])"
+                        }
+                      ]
+                    },
+                    "runAfter": {
+                      "getConfig": [
+                        "Succeeded"
+                      ]
+                    },
+                    "type": "InitializeVariable"
+                  }
+                },
+                "contentVersion": "1.0.0.0",
+                "outputs": {},
+                "parameters": {
+                  "$connections": {
+                    "defaultValue": {},
+                    "type": "Object"
+                  }
+                },
+                "triggers": {
+                  "manual": {
+                    "inputs": {},
+                    "kind": "Http",
+                    "type": "Request"
+                  }
+                }
+              },
+              "parameters": {
+                "$connections": {
+                  "value": {
+                    "azuretables": {
+                      "connectionId": "/subscriptions/0c5d1d4f-64e3-47a0-ace1-25494a794cbf/resourceGroups/RG-GT365Demo/providers/Microsoft.Web/connections/azuretables",
+                      "connectionName": "azuretables",
+                      "id": "/subscriptions/0c5d1d4f-64e3-47a0-ace1-25494a794cbf/providers/Microsoft.Web/locations/westeurope/managedApis/azuretables"
+                    },
+                    "keyvault": {
+                      "connectionId": "/subscriptions/0c5d1d4f-64e3-47a0-ace1-25494a794cbf/resourceGroups/RG-GT365Demo/providers/Microsoft.Web/connections/keyvault",
+                      "connectionName": "keyvault",
+                      "connectionProperties": {
+                        "authentication": {
+                          "identity": "/subscriptions/0c5d1d4f-64e3-47a0-ace1-25494a794cbf/resourceGroups/RG-GT365Demo/providers/Microsoft.ManagedIdentity/userAssignedIdentities/UAMIiw7bi3ek5abgq",
+                          "type": "ManagedServiceIdentity"
+                        }
+                      },
+                      "id": "/subscriptions/0c5d1d4f-64e3-47a0-ace1-25494a794cbf/providers/Microsoft.Web/locations/westeurope/managedApis/keyvault"
+                    }
+                  }
+                }
+              }
+            },
+            "subscriptionid": "[subscription().subscriptionId]",
+            "resourcegroup": "[resourceGroup().name]",
+            "location": "[resourceGroup().location]",
+            "workflows_09_TeamsOwnersGuestAudit_01_name": "11-02-ReportTeamsAudit-RunTeams",
+            "connections_azuretables_externalid": "[format('/subscriptions/{0}/resourceGroups/{1}/providers/Microsoft.Web/connections/azuretables', variables('subscriptionid'), variables('resourcegroup'))]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Logic/workflows",
+              "apiVersion": "2019-05-01",
+              "name": "[variables('workflows_09_TeamsOwnersGuestAudit_01_name')]",
+              "location": "[variables('location')]",
+              "identity": {
+                "type": "UserAssigned",
+                "userAssignedIdentities": {
+                  "[format('{0}', parameters('UAMI'))]": {}
+                }
+              },
+              "properties": {
+                "state": "Enabled",
+                "definition": "[variables('$fxv#0').definition]",
+                "parameters": {
+                  "$connections": {
+                    "value": {
+                      "azuretables": {
+                        "connectionId": "[variables('connections_azuretables_externalid')]",
+                        "connectionName": "azuretables",
+                        "id": "[format('/subscriptions/{0}/providers/Microsoft.Web/locations/{1}/managedApis/azuretables', variables('subscriptionid'), variables('location'))]"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2022-09-01",
+      "name": "11-03-ReportTeamsAudit-Send",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "UAMI": {
+            "value": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('varUAMIname'))]"
+          },
+          "UAMIname": {
+            "value": "[variables('varUAMIname')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.30.23.60470",
+              "templateHash": "6440736368873813032"
+            }
+          },
+          "parameters": {
+            "UAMIname": {
+              "type": "string"
+            },
+            "UAMI": {
+              "type": "string"
+            },
+            "workflows_09_TeamsOwnersGuestAudit_02_name": {
+              "type": "string",
+              "defaultValue": "11-03-ReportTeamsAudit-Send"
+            }
+          },
+          "variables": {
+            "$fxv#0": {
+              "definition": {
+                "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+                "actions": {
+                  "GetActiveCampaign": {
+                    "inputs": {
+                      "host": {
+                        "connection": {
+                          "name": "@parameters('$connections')['azuretables']['connectionId']"
+                        }
+                      },
+                      "method": "get",
+                      "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables/@{encodeURIComponent(variables('config')?['tableCampaigns'])}/entities",
+                      "queries": {
+                        "$filter": "IsActive eq true",
+                        "$select": "RowKey"
+                      }
+                    },
+                    "runAfter": {
+                      "initEmailTemp": [
+                        "Succeeded"
+                      ]
+                    },
+                    "type": "ApiConnection"
+                  },
+                  "getConfig": {
+                    "inputs": {
+                      "host": {
+                        "connection": {
+                          "name": "@parameters('$connections')['azuretables']['connectionId']"
+                        }
+                      },
+                      "method": "get",
+                      "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables/@{encodeURIComponent('solutionConfig')}/entities(PartitionKey='@{encodeURIComponent('11')}',RowKey='@{encodeURIComponent('config')}')"
+                    },
+                    "runAfter": {},
+                    "type": "ApiConnection"
+                  },
+                  "getRecipients": {
+                    "inputs": {
+                      "host": {
+                        "connection": {
+                          "name": "@parameters('$connections')['azuretables']['connectionId']"
+                        }
+                      },
+                      "method": "get",
+                      "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables/@{encodeURIComponent(variables('config')?['tableRecipients'])}/entities",
+                      "queries": {
+                        "$filter": "PartitionKey eq '@{variables('campaign')}'"
+                      }
+                    },
+                    "runAfter": {
+                      "initBody": [
+                        "Succeeded"
+                      ]
+                    },
+                    "type": "ApiConnection"
+                  },
+                  "initBody": {
+                    "inputs": {
+                      "variables": [
+                        {
+                          "name": "body",
+                          "type": "string",
+                          "value": "Deine Teams<br>"
+                        }
+                      ]
+                    },
+                    "runAfter": {
+                      "initCampaign": [
+                        "Succeeded"
+                      ]
+                    },
+                    "type": "InitializeVariable"
+                  },
+                  "initCampaign": {
+                    "inputs": {
+                      "variables": [
+                        {
+                          "name": "campaign",
+                          "type": "string",
+                          "value": "@{body('GetActiveCampaign')?['value'][0]?['RowKey']}"
+                        }
+                      ]
+                    },
+                    "runAfter": {
+                      "GetActiveCampaign": [
+                        "Succeeded",
+                        "Failed"
+                      ]
+                    },
+                    "type": "InitializeVariable"
+                  },
+                  "initConfig": {
+                    "inputs": {
+                      "variables": [
+                        {
+                          "name": "config",
+                          "type": "object",
+                          "value": "@json(body('getConfig')?['Value'])"
+                        }
+                      ]
+                    },
+                    "runAfter": {
+                      "getConfig": [
+                        "Succeeded"
+                      ]
+                    },
+                    "type": "InitializeVariable"
+                  },
+                  "initEmailTemp": {
+                    "inputs": {
+                      "variables": [
+                        {
+                          "name": "emailTemp",
+                          "type": "string",
+                          "value": "<!DOCTYPE html>\n<html>\n\n<head>\n  <meta content=\"text/html; charset=utf-8\" http-equiv=\"Content-Type\">\n  <meta content=\"email template by atwork.at\" name=\"template\">\n  <style>\n    <!--\n    /* Font Definitions */\n    @font-face {\n      font-family: Wingdings;\n      panose-1: 5 0 0 0 0 0 0 0 0 0;\n    }\n\n    @font-face {\n      font-family: \"Cambria Math\";\n      panose-1: 2 4 5 3 5 4 6 3 2 4;\n    }\n\n    @font-face {\n      font-family: Calibri;\n      panose-1: 2 15 5 2 2 2 4 3 2 4;\n    }\n\n    @font-face {\n      font-family: \"Segoe UI\";\n      panose-1: 2 11 5 2 4 2 4 2 2 3;\n    }\n\n    @font-face {\n      font-family: \"Segoe UI Light\";\n      panose-1: 2 11 5 2 4 2 4 2 2 3;\n    }\n\n    /* Style Definitions */\n    p.MsoNormal,\n    li.MsoNormal,\n    div.MsoNormal {\n      margin: 0cm;\n      margin-bottom: .0001pt;\n      font-size: 11.0pt;\n      font-family: \"Calibri\", sans-serif;\n    }\n\n    h1 {\n      mso-style-link: \"Heading 1 Char\";\n      margin-top: 24.0pt;\n      margin-right: 0cm;\n      margin-bottom: 0cm;\n      margin-left: 0cm;\n      margin-bottom: .0001pt;\n      page-break-after: avoid;\n      font-size: 16.0pt;\n      font-family: \"Segoe UI Light\", sans-serif;\n      color: #2F5496;\n      font-weight: normal;\n    }\n\n    h2 {\n      mso-style-link: \"Heading 2 Char\";\n      margin: 0cm;\n      margin-bottom: .0001pt;\n      font-size: 16.0pt;\n      font-family: \"Calibri\", sans-serif;\n      font-weight: normal;\n    }\n\n    h3 {\n      mso-style-link: \"Heading 3 Char\";\n      margin-top: 2.0pt;\n      margin-right: 0cm;\n      margin-bottom: 2.0pt;\n      margin-left: 0cm;\n      line-height: 130%;\n      page-break-after: avoid;\n      font-size: 14.0pt;\n      font-family: \"Calibri\", sans-serif;\n      font-weight: normal;\n    }\n\n    h4 {\n      mso-style-link: \"Heading 4 Char\";\n      margin-top: 2.0pt;\n      margin-right: 0cm;\n      margin-bottom: 2.0pt;\n      margin-left: 0cm;\n      line-height: 130%;\n      page-break-after: avoid;\n      font-size: 12.0pt;\n      font-family: \"Calibri\", sans-serif;\n      font-weight: bold;\n    }\n\n    a:link,\n    span.MsoHyperlink {\n      color: blue;\n      text-decoration: underline;\n    }\n\n    a:visited,\n    span.MsoHyperlinkFollowed {\n      color: #954F72;\n      text-decoration: underline;\n    }\n\n    p {\n      margin-right: 0cm;\n      margin-left: 0cm;\n      font-size: 11.0pt;\n      font-family: \"Calibri\", sans-serif;\n      line-height: 13.5pt;\n    }\n\n    span.Heading2Char {\n      mso-style-name: \"Heading 2 Char\";\n      mso-style-link: \"Heading 2\";\n      font-family: \"Segoe UI\", sans-serif;\n    }\n\n    span.Heading1Char {\n      mso-style-name: \"Heading 1 Char\";\n      mso-style-link: \"Heading 1\";\n      font-family: \"Segoe UI Light\", sans-serif;\n      color: #2F5496;\n    }\n\n    span.Heading3Char {\n      mso-style-name: \"Heading 3 Char\";\n      mso-style-link: \"Heading 3\";\n      font-family: \"Segoe UI\", sans-serif;\n    }\n\n    span.Heading4Char {\n      mso-style-name: \"Heading 4 Char\";\n      mso-style-link: \"Heading 4\";\n      font-family: \"Segoe UI\", sans-serif;\n      font-weight: bold;\n    }\n\n    span.preheader {\n      mso-style-name: preheader;\n      display: none;\n    }\n\n    .MsoChpDefault {\n      font-family: \"Calibri\", sans-serif;\n    }\n\n    .MsoPapDefault {\n      margin-bottom: 8.0pt;\n      line-height: 107%;\n    }\n\n    /* Page Definitions */\n    @page WordSection1 {\n      size: 612.0pt 792.0pt;\n      margin: 72.0pt 72.0pt 72.0pt 72.0pt;\n    }\n\n    div.WordSection1 {\n      page: WordSection1;\n    }\n\n    /* List Definitions */\n    ol {\n      margin-bottom: 0cm;\n    }\n\n    ul {\n      margin-bottom: 0cm;\n    }\n\n    /* fix generated HTML tables */\n    tr>td>p>span {\n      font-size: 0.8em;\n      font-family: \"Calibri\", sans-serif;\n    }\n\n    ul>li {\n      font-family: \"Calibri\", sans-serif;\n      font-size: 11.0pt;\n      color: #222222;\n      line-height: 13.5pt;\n    }\n    -->\n  </style>\n  <title></title>\n</head><!-- email template 2018 by atwork.at -->\n\n<body lang=\"EN-US\" link=\"blue\" vlink=\"#954F72\">\n  <div class=\"WordSection1\">\n    <p class=\"MsoNormal\">&nbsp;</p>\n    <div align=\"center\">\n      <table border=\"0\" cellpadding=\"0\" cellspacing=\"0\" class=\"MsoNormalTable\"\n        style='width:100.0%;border-collapse:collapse' width=\"100%\">\n        <tr>\n          <td style='width:100.0%;background:#F1F1F1;padding:0cm 0cm 0cm 0cm' valign=\"top\" width=\"100%\">\n            <div align=\"center\">\n              <!-- text above the table if needed -->\n              <table border=\"0\" cellpadding=\"0\" cellspacing=\"0\" class=\"MsoNormalTable\"\n                style='width:450.0pt;border-collapse:collapse' width=\"600\">\n                <tr>\n                  <td style='width:450.0pt;background:#F1F1F1;padding:0pt 0pt 2.25pt 0pt' width=\"600\">\n                    <p align=\"right\" style='text-align:right'></p>\n                  </td>\n                </tr>\n              </table>\n            </div>\n            <div align=\"center\">\n              <table border=\"1\" cellpadding=\"0\" cellspacing=\"0\" class=\"MsoNormalTable\"\n                style='border-collapse:collapse;border:none'>\n                <tr>\n                  <td style='border:solid #595959 1.0pt;padding:.75pt .75pt .75pt .75pt'>\n                    <div align=\"center\">\n                      <table border=\"0\" cellpadding=\"0\" cellspacing=\"0\" class=\"MsoNormalTable\"\n                        style='width:450.0pt;background:white;border-collapse:collapse' width=\"600\">\n                        <tr>\n                          <!-- company logo -->\n                          <td style='padding:18.75pt 0cm 15.0pt 22.5pt'>\n                            <p class=\"MsoNormal\" style='line-height:105%'><span><img alt=\"Logo\" height=\"20\"\n                                  src=\"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGIAAAAUCAIAAAD5vH+FAAAABGdBTUEAAK/INwWK6QAAABl0RVh0U29mdHdhcmUAQWRvYmUgSW1hZ2VSZWFkeXHJZTwAAAkxSURBVHja7Fh5cFPnEX+XTuuwZNmSL3zgA9tgY5twmdNgKIQJzZR2KAzx0HLDdKBNJ2HSBFpaSkqnTTzQuiWQNIFhAoQQYo5wgw3EF8b3bWzJsmVJ1mU/ne/oSja2bGxD/ygzafrmk/Tme/u+b7/f7v52VyjLssj/r+dd2Pfz2Fcru/afq3S4qReUJ76HGFkd7u0nSts7rGGBwi1L41+ON7Ga3q+05qvfIZgcLsbspODoxn7XSwo6Y1/Zzdof3q5bbXM0fVdgQlEEx1C4Gfh+GTB5aKvXo1gPRdv/h+N0DG5iWapa836PrRDH8EEsUR6G8gXccIUoM1y+gktIYVJtvNDc84mHNhEYB0XR8vZfc3ARxTh4eHBmzEEhL/LjOy33qnW/Xz89XC4atYXN4f7gcmNZmykzWvbLVYliAW+UQLfF/s5n5VlTVT9bFAeLw0xDl+Vala5OYzOSbidF0wwDbsElsAAOFikXzooLWpYWJuJz/Bdp0tkulnXWdlotdreL9qZ0nGF3Lo+fk6gcD47KDtPvzlRlJQfvWZk8sO+4MHlosrbzL1aHCX8qNlQycHAkSJQ6f8opWcDUFv2/Grq+AsX4HD6IqA03GNYrSTNITMiPeJzId8/VapsNgRL+X3NnjDQDu+146enrLQiOfl34pEFnO7UrC0NH+P/hi3UfFzRdqTesy4oWcDkHzlf/+es6m8mBUAwyLIl6VWN9Cgo5qTGy/M2z5sQHDzz7/MGTHcdKTVYn4qaH17V7JAJiQbLq2WBzUfSHl+sPXqiz6voftJm25yQKuMREMIGzLE4+a+qvRFF8SBuaIc1kvcb0pbGvqrR1d860bzKjDyolC23OxhbdMZBMi9oTwItgWJpLyEMDc3AMWZIS8mmX7dS36rdXJykDA4aN3G07W6xBxLwIuaDT7ID7d1+3JkcEDgkYbI5TD9VIAHdpigow+uRuy3snKxACT4gPfi09NETKBzuzTzVze5iaTsv58s6qVvPaDx+U/GG5UspXG/u3nii3kh6ehLdudmRSRKD3FRbBWHb1zAiXh2ZHmv9Bo2Hv6Yp7NT1g5PAoWd7GTD6XeH5BoArMhvHsfLXmUFnb3l6yjHR1SoVJMPS2oqaufAAlXrVJKkz2F96ZE3fqfrtBT35W1P7mqpSh+SuPuyjSLVUIT2yasfZvxSZ9/9Wqbn+YTha16/UkLiR+8YMEcL2j15thMjlKcus32UqpYEyFTxa25uaXqLtsX5aqty1NuF3bY7U4UQ6W90b6luyEUcI6cDEfSCIe4abo/WerPrjS6Oh3IwT246zYwxsyohQBz6dwp8dgdTSYyKpRw2yv5eAScHmGcXto24DwEHNTNDlqnZlxwUumqiDGjt9tt7s8Q/MFj7sQhs2IluWkhmVMksJ9QUUX+9S0UPIdu90Kby1KCXllsgJoRd3rgIdrZk0aDyO4fjInOiokADSr1HhTis7igHu5lL9mZtQYmW6QQbCiBv2qw3f/eK7G4aKVIaLj22ef2TP/WYxGe5PBVlypPmAhK12UiWEpP68cTKSwAYFzfBu9UCrdvmTytUfahg7zxXLt2rnRMPPE0PdtqwmSwqq0MFhkxfSwG2Xa4tbe1p6+OKUEBC490tZ3WIEFdy31eoGbYoHyYLdgMX+ihI1hYr73LE6Xl4lY0JRFILMwzNitmFd7HvH5/Q4v0/HwV2JlF361MEwmfH5BYLHXFTauU/de6nN1AiB8Qson5P5DQMg5mAgZtwccA7gV6eGpsUGIh/n7zRbG9+L1ah1pcXJF3OWpoV6BtFCemG+3um5V63xxwB690QyemRItAwSH65zn1rjsoDuOkGUnbFhpJkIlhmQJL3b2Om7U6F6oINBZ79jdGqi4UiL2xKs283ApO/LkGIp3mi4VNm7k4NzRWnoH/ezqPALfsjh2V7OxsN5wv1E/f4qyoFwL+qXHyJLCvb6TGCbNiA58WNl9saJry9KEh82Ge/V62GlrdhyPgw+d1pd/mYm8CRznP2odvI5H714WLxfzdnxU2m0gc488KG0x/ml9hoBLTORNbgroBsVQLEG1VSqYwueGCrgq/8HjBPOIYHb0fpChgV5oD2UbU6GfZkWFhYpYh+fEnTab3V3U0gsWfzUtFMJk4Hgrp4fCz/0mo8Xu/OhWK2OnVCGidXMHOSWAhwu5gBf6qMMywbH1VocWygUUgTQ3IodNiBVE5MaFky+/vShpUiBCsUcKGl49dKutp28imITcEJ+bMlA3uikLzbhoxj04WPh2wKCY0Twt4KhwlAB7N3bnky61TwaGnWEG2yW5iL9hXjQcoKBK986Zx+Z+FyrkrEwPH1phZXoYJuRYSPe+s9WXKrtBEuSDxIMFJ1SM8xIVwMdfFGuOXmvstjiA473D5RtuinRSNRrLjhMlZpsTapmcacoX96kBHlicorq7P2dDdiyC47cf6xYfuHEV1Bgv6EIk84TcSKu9raJ9b5Mun8AlfnQD8FFQeUDlycEIf2MFBkwNla18YrjYbjwPxQGfG+QNVRbqLDQj5rfRijUgs2lRbN6VJqPJceRaC+KiM5IUaZOG039qpGxGjKykzpD3TTMozhdzNy+O9Vdx3+vTiuoMaq111z9L9p2vDQrgDingrZtoRgONrM2b43++InFRsmrIzycgJpYd4XHBEv6nO7PmxCveOl2p1va9duj2F28ugDQt5BGjYZIIEmbH5Ze07u5zNlvtT8ZrGr2DHVYBQ4m58cegItWarjjcetKlf1rKI1ayHlF47+NU0rzcjLdOVphId1y4+MgbmQSODxsKx/JyZ2w48rC52yoTcg6tT48PlfpvmhAmufle9qHztdfqejQmR2+vfQQAOMoTctOSlLkLorYtSxyo5ikgMg8FfSY7DkbwCD7USL7bvixxeox88z+Ka5sMxn4IpuG30VHJgKL7zWTNQEM7waUQz+ESEv+ZfmcH6eygWecAoWMoVyGeSeDD3Vxrj7XDQKZGyxWiMVJ7b5+zqsMUqQgATMfb1Ey62/X9vgaN8fUpYCSIekwpFU5WinBsmEBaemwN2j4BF5s3BfiUeLYvKWowQMBOCZcMVCEjaM7mrFGbFySF+NsS/a/+ycs+zVM+G6ND0fA0eaPIS7wGlJlgUy8U4zz+twADAE7cbX6225xOAAAAAElFTkSuQmCC\"\n                                  width=\"93\"></span></p>                               </td><!-- spacer -->\n                          <td style='padding:18.75pt 22.5pt 15.0pt 0cm'>\n                            <p align=\"right\" class=\"MsoNormal\" style='text-align:right;line-height:105%'><span\n                                style='font-size:10.0pt;font-family: \"Segoe UI\",sans-serif;color:#222222'>GT365</span></p>\n                          </td>\n                        </tr>\n                        <tr>\n                          <!-- banner text -->\n                          <td colspan=\"2\" style='background:#005FA8;padding:11.25pt 22.5pt 11.25pt 22.5pt'>\n                            <p style='line-height:105%'><span\n                                style='font-size:19.5pt;line-height: 105%;font-family:\"Segoe UI Light\",sans-serif;color:white'>Teams Audit [campaign]</span></p>\n                          </td>\n                        </tr>\n                        <tr>\n                          <!-- content -->\n                          <td colspan=\"2\" style='width:100.0%;padding:11.25pt 22.5pt 11.25pt 22.5pt' width=\"100%\">\n                            <p style='line-height:13.5pt'><span\n                                style='font-size:10.0pt;font-family: \"Segoe UI\",sans-serif;color:#222222'>Hi,<br>\n\t\t\t\t\t\t\t\t<br>\n\t\t\t\t\t\t\t\tYou are the owner of the following teams and are therefore responsible for the authorization review.<br>\n\t\t\t\t\t\t\t\tPlease ensure that only necessary people are members of your team and remove people from private channels or the entire team if they no longer need active access to the information contained therein.<br>\n\t\t\t\t\t\t\t\tConfirm which users still require access using the following authorization review.<br>\n\t\t\t\t\t\t\t\t<br>\n\t\t\t\t\t\t\t\t[text]<br>\n\t\t\t\t\t\t\t\t<br>\n\t\t\t\t\t\t\t\tSincerely, your IT-team</span></p>\n                          </td>\n                        </tr>\n                        <tr>\n                          <!-- footer -->\n                          <td colspan=\"2\" style='background:#595959;padding:.75pt .75pt .75pt .75pt'>\n                            <p class=\"MsoNormal\"\n                              style='margin-left:26.85pt;line-height:13.5pt;font-size:9.0pt;font-family:\"Segoe UI\",sans-serif; color:white'>\n                              &nbsp;</p>\n                            <p class=\"MsoNormal\"\n                              style='margin-left:26.85pt;line-height:13.5pt;font-size:9.0pt;font-family:\"Segoe UI\",sans-serif; color:white'>\n                              <a href=\"https://www.atwork-it.com/gdpr/\" style=\"color:white\">Privacy statement</a></p>\n                            <p class=\"MsoNormal\"\n                              style='margin-left:26.85pt;line-height:13.5pt;font-size:9.0pt;font-family:\"Segoe UI\",sans-serif; color:white'>\n                              This is an automatic generated email sent by <a href=\"https://www.atwork-it.com/\"\n                                style=\"color:white\">atwork</a>. Do not reply.</p>\n                            <p class=\"MsoNormal\"\n                              style='margin-left:26.85pt;line-height:13.5pt;font-size:9.0pt;font-family:\"Segoe UI\",sans-serif; color:white'>\n                              In case of questions, pls. contact <a href=\"mailto:office@atwork.at?subject=notification\"\n                                style=\"color:white\">office@atwork.at</a>.</p>\n                            <p class=\"MsoNormal\"\n                              style='margin-left:26.85pt;line-height:13.5pt;font-size:9.0pt;font-family:\"Segoe UI\",sans-serif; color:white'>\n                              &nbsp;</p>\n                          </td>\n                        </tr>\n                      </table>\n                    </div>\n                  </td>\n                </tr>\n              </table>\n            </div>\n            <div align=\"center\">\n              <table border=\"0\" cellpadding=\"0\" cellspacing=\"0\" class=\"MsoNormalTable\"\n                style='width:450.0pt;border-collapse:collapse' width=\"600\">\n                <tr>\n                  <td style='width:450.0pt;background:#F1F1F1;padding:0pt 0pt 2.25pt 0pt' width=\"600\">\n                    <p align=\"left\" style='text-align:right'><span\n                        style='font-size:9.0pt;font-family:\"Segoe UI\",sans-serif;color:#666666'>&nbsp;</span></p>\n                  </td>\n                </tr>\n              </table>\n            </div>\n          </td>\n        </tr>\n      </table>\n    </div>\n    <p class=\"MsoNormal\">&nbsp;</p>\n  </div>\n</body>\n\n</html>"
+                        }
+                      ]
+                    },
+                    "runAfter": {
+                      "initConfig": [
+                        "Succeeded"
+                      ]
+                    },
+                    "type": "InitializeVariable"
+                  },
+                  "initSendEmail": {
+                    "inputs": {
+                      "variables": [
+                        {
+                          "name": "sendEmail",
+                          "type": "boolean",
+                          "value": false
+                        }
+                      ]
+                    },
+                    "runAfter": {
+                      "getRecipients": [
+                        "Succeeded"
+                      ]
+                    },
+                    "type": "InitializeVariable"
+                  },
+                  "recipientsLoop": {
+                    "actions": {
+                      "GetAllOwnerGroups": {
+                        "inputs": {
+                          "host": {
+                            "connection": {
+                              "name": "@parameters('$connections')['azuretables']['connectionId']"
+                            }
+                          },
+                          "method": "get",
+                          "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables/@{encodeURIComponent(variables('config')?['tableOwners'])}/entities",
+                          "queries": {
+                            "$filter": "PartitionKey eq '@{variables('campaign')}' and UPN eq '@{items('recipientsLoop')?['RowKey']}' "
+                          }
+                        },
+                        "runAfter": {},
+                        "type": "ApiConnection"
+                      },
+                      "checkSendEmail": {
+                        "actions": {
+                          "sendEMail": {
+                            "inputs": {
+                              "body": {
+                                "Body": "<p>@{replace(replace(variables('emailTemp'), '[text]', variables('body')), '[campaign]', variables('campaign'))}</p>",
+                                "Importance": "Normal",
+                                "Subject": "GT365 s11: Teams Audit @{variables('campaign')}@{if(equals(variables('config')?['debug'],true),concat(' [',items('recipientsLoop')?['RowKey'],']'),'')} -  @{if(equals(variables('config')?['debug'],true),variables('config')?['adminEmail'],items('recipientsLoop')?['RowKey'])}",
+                                "To": "@{if(equals(variables('config')?['debug'],true),variables('config')?['adminEmail'],items('recipientsLoop')?['RowKey'])}"
+                              },
+                              "host": {
+                                "connection": {
+                                  "name": "@parameters('$connections')['office365']['connectionId']"
+                                }
+                              },
+                              "method": "post",
+                              "path": "/v2/Mail"
+                            },
+                            "runAfter": {},
+                            "type": "ApiConnection"
+                          }
+                        },
+                        "expression": {
+                          "and": [
+                            {
+                              "equals": [
+                                "@variables('sendEmail')",
+                                true
+                              ]
+                            }
+                          ]
+                        },
+                        "runAfter": {
+                          "groupsLoop": [
+                            "Succeeded",
+                            "Failed"
+                          ]
+                        },
+                        "type": "If"
+                      },
+                      "groupsLoop": {
+                        "actions": {
+                          "CheckTeamConfirmed": {
+                            "actions": {},
+                            "else": {
+                              "actions": {
+                                "Scope": {
+                                  "actions": {
+                                    "UpdateTeamsSentDate": {
+                                      "inputs": {
+                                        "body": {
+                                          "SentDate": "@{utcNow()}",
+                                          "SentDate@odata.type": "Edm.DateTime"
+                                        },
+                                        "host": {
+                                          "connection": {
+                                            "name": "@parameters('$connections')['azuretables']['connectionId']"
+                                          }
+                                        },
+                                        "method": "patch",
+                                        "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables/@{encodeURIComponent(variables('config')?['tableOwners'])}/entities(PartitionKey='@{encodeURIComponent(variables('campaign'))}',RowKey='@{encodeURIComponent(items('groupsLoop')?['RowKey'])}')"
+                                      },
+                                      "runAfter": {
+                                        "checkShowMembers": [
+                                          "Succeeded"
+                                        ]
+                                      },
+                                      "type": "ApiConnection"
+                                    },
+                                    "addTeam": {
+                                      "inputs": {
+                                        "name": "body",
+                                        "value": "<tr><td style=\"font-weight: 500;\">@{items('groupsLoop')['DisplayName']} (@{length(body('getMembers')?['value'])})</td><td align=\"right\"><table cellspacing=\"0\" cellpadding=\"0\" style=\"text-align: right;\"><tr><td style=\"padding-right: 10px;\"><table cellspacing=\"0\" cellpadding=\"0\"><tr><td style=\"padding: 4px 14px; border-radius: 5px; background-color: #4CAF50;\"><a href=\"@{variables('config')?['submitActionUrl']}&action=check&requestId=@{items('groupsLoop')?['RequestId']}\" style=\"display: inline-block; color: #ffffff; text-decoration: none; border-radius: 5px;\">Check</a></td></tr></table></td><td><table cellspacing=\"0\" cellpadding=\"0\"><tr><td style=\"padding: 4px 14px; border-radius: 5px; background-color: #008CBA;\"><a href=\"@{variables('config')?['submitActionUrl']}&action=action&requestId=@{items('groupsLoop')?['RequestId']}\" style=\"display: inline-block; color: #ffffff; text-decoration: none;\">Confirm</a></td></tr></table></td></tr></table></td></tr>"
+                                      },
+                                      "runAfter": {
+                                        "openTable": [
+                                          "Succeeded"
+                                        ]
+                                      },
+                                      "type": "AppendToStringVariable"
+                                    },
+                                    "checkShowMembers": {
+                                      "actions": {
+                                        "AddTeamMembers": {
+                                          "actions": {
+                                            "addListClose": {
+                                              "inputs": {
+                                                "name": "body",
+                                                "value": "</ol><br>"
+                                              },
+                                              "runAfter": {
+                                                "membersLoop": [
+                                                  "Succeeded"
+                                                ]
+                                              },
+                                              "type": "AppendToStringVariable"
+                                            },
+                                            "addListStart": {
+                                              "inputs": {
+                                                "name": "body",
+                                                "value": "<ol style=\"margin:10px0;\">"
+                                              },
+                                              "runAfter": {},
+                                              "type": "AppendToStringVariable"
+                                            },
+                                            "membersLoop": {
+                                              "actions": {
+                                                "addMemberListItem": {
+                                                  "inputs": {
+                                                    "name": "body",
+                                                    "value": "<li style=\"font-weight:500:margin-bottom:5px\">@{items('membersLoop')['UPN']} (@{if(equals(item()?['IsGuest'], true), 'guest', 'member')})</li>"
+                                                  },
+                                                  "runAfter": {},
+                                                  "type": "AppendToStringVariable"
+                                                }
+                                              },
+                                              "foreach": "@sort(body('getMembers')?['value'], 'UPN')",
+                                              "runAfter": {
+                                                "ownersLoop": [
+                                                  "Succeeded"
+                                                ]
+                                              },
+                                              "type": "Foreach"
+                                            },
+                                            "ownersLoop": {
+                                              "actions": {
+                                                "addOwners": {
+                                                  "inputs": {
+                                                    "name": "body",
+                                                    "value": "<li>@{item()} (owner)</li>"
+                                                  },
+                                                  "runAfter": {},
+                                                  "type": "AppendToStringVariable"
+                                                }
+                                              },
+                                              "foreach": "@sort(split(body('GetTeam')?['OwnersMail'], ';'))",
+                                              "runAfter": {
+                                                "addListStart": [
+                                                  "Succeeded"
+                                                ]
+                                              },
+                                              "type": "Foreach"
+                                            }
+                                          },
+                                          "runAfter": {},
+                                          "type": "Scope"
+                                        }
+                                      },
+                                      "else": {
+                                        "actions": {
+                                          "addLineBreak": {
+                                            "inputs": {
+                                              "name": "body",
+                                              "value": "<br>"
+                                            },
+                                            "runAfter": {},
+                                            "type": "AppendToStringVariable"
+                                          }
+                                        }
+                                      },
+                                      "expression": {
+                                        "and": [
+                                          {
+                                            "equals": [
+                                              "@variables('config')?['showMembers']",
+                                              true
+                                            ]
+                                          }
+                                        ]
+                                      },
+                                      "runAfter": {
+                                        "closeTable": [
+                                          "Succeeded"
+                                        ]
+                                      },
+                                      "type": "If"
+                                    },
+                                    "closeTable": {
+                                      "inputs": {
+                                        "name": "body",
+                                        "value": "</table>"
+                                      },
+                                      "runAfter": {
+                                        "addTeam": [
+                                          "Succeeded"
+                                        ]
+                                      },
+                                      "type": "AppendToStringVariable"
+                                    },
+                                    "getMembers": {
+                                      "description": "Get members of the group by GroupId",
+                                      "inputs": {
+                                        "host": {
+                                          "connection": {
+                                            "name": "@parameters('$connections')['azuretables']['connectionId']"
+                                          }
+                                        },
+                                        "method": "get",
+                                        "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables/@{encodeURIComponent('groupmembers')}/entities",
+                                        "queries": {
+                                          "$filter": " PartitionKey eq '@{items('groupsLoop')['GroupId']}'",
+                                          "$select": "IsGuest,UPN"
+                                        }
+                                      },
+                                      "runAfter": {},
+                                      "type": "ApiConnection"
+                                    },
+                                    "openTable": {
+                                      "inputs": {
+                                        "name": "body",
+                                        "value": "<table width=\"600\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">"
+                                      },
+                                      "runAfter": {
+                                        "getMembers": [
+                                          "Succeeded"
+                                        ]
+                                      },
+                                      "type": "AppendToStringVariable"
+                                    },
+                                    "setSendEmailTrue": {
+                                      "inputs": {
+                                        "name": "sendEmail",
+                                        "value": true
+                                      },
+                                      "runAfter": {
+                                        "UpdateTeamsSentDate": [
+                                          "Succeeded"
+                                        ]
+                                      },
+                                      "type": "SetVariable"
+                                    }
+                                  },
+                                  "runAfter": {},
+                                  "type": "Scope"
+                                }
+                              }
+                            },
+                            "expression": {
+                              "and": [
+                                {
+                                  "equals": [
+                                    "@body('GetTeam')?['Confirmed']",
+                                    true
+                                  ]
+                                }
+                              ]
+                            },
+                            "runAfter": {
+                              "GetTeam": [
+                                "Succeeded"
+                              ]
+                            },
+                            "type": "If"
+                          },
+                          "GetTeam": {
+                            "inputs": {
+                              "host": {
+                                "connection": {
+                                  "name": "@parameters('$connections')['azuretables']['connectionId']"
+                                }
+                              },
+                              "method": "get",
+                              "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables/@{encodeURIComponent(variables('config')?['tableTeams'])}/entities(PartitionKey='@{encodeURIComponent(variables('campaign'))}',RowKey='@{encodeURIComponent(concat(items('groupsLoop')?['PartitionKey'],'|',items('groupsLoop')?['GroupId']))}')",
+                              "queries": {
+                                "$select": "Confirmed,OwnersMail,Id,GroupId"
+                              }
+                            },
+                            "runAfter": {},
+                            "type": "ApiConnection"
+                          }
+                        },
+                        "foreach": "@body('GetAllOwnerGroups')?['value']",
+                        "runAfter": {
+                          "setSendEmailFalse": [
+                            "Succeeded"
+                          ]
+                        },
+                        "type": "Foreach"
+                      },
+                      "setEmailStart": {
+                        "inputs": {
+                          "name": "body",
+                          "value": "Your Teams:<br>"
+                        },
+                        "runAfter": {
+                          "GetAllOwnerGroups": [
+                            "Succeeded"
+                          ]
+                        },
+                        "type": "SetVariable"
+                      },
+                      "setSendEmailFalse": {
+                        "inputs": {
+                          "name": "sendEmail",
+                          "value": false
+                        },
+                        "runAfter": {
+                          "setEmailStart": [
+                            "Succeeded"
+                          ]
+                        },
+                        "type": "SetVariable"
+                      }
+                    },
+                    "foreach": "@body('getRecipients')?['value']",
+                    "runAfter": {
+                      "initSendEmail": [
+                        "Succeeded"
+                      ]
+                    },
+                    "runtimeConfiguration": {
+                      "concurrency": {
+                        "repetitions": 1
+                      }
+                    },
+                    "type": "Foreach"
+                  }
+                },
+                "contentVersion": "1.0.0.0",
+                "outputs": {},
+                "parameters": {
+                  "$connections": {
+                    "defaultValue": {},
+                    "type": "Object"
+                  }
+                },
+                "triggers": {
+                  "manual": {
+                    "inputs": {},
+                    "kind": "Http",
+                    "type": "Request"
+                  }
+                }
+              },
+              "parameters": {
+                "$connections": {
+                  "value": {
+                    "azuretables": {
+                      "connectionId": "/subscriptions/0c5d1d4f-64e3-47a0-ace1-25494a794cbf/resourceGroups/RG-GT365Demo/providers/Microsoft.Web/connections/azuretables",
+                      "connectionName": "azuretables",
+                      "id": "/subscriptions/0c5d1d4f-64e3-47a0-ace1-25494a794cbf/providers/Microsoft.Web/locations/westeurope/managedApis/azuretables"
+                    },
+                    "office365": {
+                      "connectionId": "/subscriptions/0c5d1d4f-64e3-47a0-ace1-25494a794cbf/resourceGroups/RG-GT365Demo/providers/Microsoft.Web/connections/office365",
+                      "connectionName": "office365",
+                      "id": "/subscriptions/0c5d1d4f-64e3-47a0-ace1-25494a794cbf/providers/Microsoft.Web/locations/westeurope/managedApis/office365"
+                    }
+                  }
+                }
+              }
+            },
+            "subscriptionid": "[subscription().subscriptionId]",
+            "resourcegroup": "[resourceGroup().name]",
+            "location": "[resourceGroup().location]",
+            "connections_azuretables_externalid": "[format('/subscriptions/{0}/resourceGroups/{1}/providers/Microsoft.Web/connections/azuretables', variables('subscriptionid'), variables('resourcegroup'))]",
+            "connections_office365_externalid": "[format('/subscriptions/{0}/resourceGroups/{1}/providers/Microsoft.Web/connections/office365', variables('subscriptionid'), variables('resourcegroup'))]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Logic/workflows",
+              "apiVersion": "2019-05-01",
+              "name": "[parameters('workflows_09_TeamsOwnersGuestAudit_02_name')]",
+              "location": "[variables('location')]",
+              "identity": {
+                "type": "UserAssigned",
+                "userAssignedIdentities": {
+                  "[format('{0}', parameters('UAMI'))]": {}
+                }
+              },
+              "properties": {
+                "state": "Enabled",
+                "definition": "[variables('$fxv#0').definition]",
+                "parameters": {
+                  "$connections": {
+                    "value": {
+                      "azuretables": {
+                        "connectionId": "[variables('connections_azuretables_externalid')]",
+                        "connectionName": "azuretables",
+                        "id": "[format('/subscriptions/{0}/providers/Microsoft.Web/locations/{1}/managedApis/azuretables', variables('subscriptionid'), variables('location'))]"
+                      },
+                      "office365": {
+                        "connectionId": "[variables('connections_office365_externalid')]",
+                        "connectionName": "office365",
+                        "id": "[format('/subscriptions/{0}/providers/Microsoft.Web/locations/{1}/managedApis/office365', variables('subscriptionid'), variables('location'))]"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2022-09-01",
+      "name": "11-04-ReportTeamsAudit-Request",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "UAMI": {
+            "value": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('varUAMIname'))]"
+          },
+          "UAMIname": {
+            "value": "[variables('varUAMIname')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.30.23.60470",
+              "templateHash": "6551433809473673700"
+            }
+          },
+          "parameters": {
+            "UAMIname": {
+              "type": "string"
+            },
+            "UAMI": {
+              "type": "string"
+            }
+          },
+          "variables": {
+            "$fxv#0": {
+              "definition": {
+                "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+                "actions": {
+                  "CheckRequest": {
+                    "actions": {
+                      "CheckAction": {
+                        "actions": {
+                          "ResponseRedirect": {
+                            "inputs": {
+                              "body": "@replace(replace(variables('emailTemplate'), '[body]',  variables('body')), '[meta]', variables('redirectLink'))",
+                              "headers": {
+                                "Content-Type": "text/html"
+                              },
+                              "statusCode": 200
+                            },
+                            "kind": "Http",
+                            "runAfter": {
+                              "SetRedirectBody": [
+                                "Succeeded"
+                              ]
+                            },
+                            "type": "Response"
+                          },
+                          "SetRedirectBody": {
+                            "inputs": {
+                              "name": "body",
+                              "value": "<h2 class=\"text-2xl font-semibold mb-4\">Manage Team</h2>\n<p class=\"mb-1\">You will be redirected to your team...</p>\n<p class=\"opacity-50 font-semibold\">Current Date: @{formatDateTime(utcNow(), 'dd.MM.yyyy HH:mm')}</p>"
+                            },
+                            "runAfter": {
+                              "updateRedirectLink": [
+                                "Succeeded"
+                              ]
+                            },
+                            "type": "SetVariable"
+                          },
+                          "updateOwnersCheck": {
+                            "inputs": {
+                              "body": {
+                                "Checked": true,
+                                "CheckedDateTime": "@{utcNow()}",
+                                "CheckedDateTime@odata.type": "Edm.DateTime"
+                              },
+                              "host": {
+                                "connection": {
+                                  "name": "@parameters('$connections')['azuretables']['connectionId']"
+                                }
+                              },
+                              "method": "patch",
+                              "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables/@{encodeURIComponent(variables('config')?['tableOwners'])}/entities(PartitionKey='@{encodeURIComponent(variables('ownerRequest')?['PartitionKey'])}',RowKey='@{encodeURIComponent(variables('ownerRequest')?['RowKey'])}')"
+                            },
+                            "runAfter": {},
+                            "type": "ApiConnection"
+                          },
+                          "updateRedirectLink": {
+                            "inputs": {
+                              "name": "redirectLink",
+                              "value": "@{replace( variables('redirectMeta'),'[link]',variables('ownerRequest')?['ManageTeamUrl'])}"
+                            },
+                            "runAfter": {
+                              "updateOwnersCheck": [
+                                "Succeeded"
+                              ]
+                            },
+                            "type": "SetVariable"
+                          }
+                        },
+                        "else": {
+                          "actions": {
+                            "CheckConfirmed": {
+                              "actions": {
+                                "updateBodyAlreadyConfirmed": {
+                                  "inputs": {
+                                    "name": "body",
+                                    "value": "<h2 class=\"text-2xl font-semibold mb-4\">Already Confirmed</h2>\n<p class=\"mb-1\">Thank you, the team @{body('GetTeamConfirmed')?['value'][0]?['DisplayName']} has already been confirmed by @{body('GetTeamConfirmed')?['value'][0]?['ConfirmedBy']} </p>\n<p class=\"opacity-50 font-semibold\">Date Submitted: @{formatDateTime(body('GetTeamConfirmed')?['value'][0]?['ConfirmedDateTime'], 'dd.MM.yyyy HH:mm')}</p>"
+                                  },
+                                  "runAfter": {},
+                                  "type": "SetVariable"
+                                }
+                              },
+                              "else": {
+                                "actions": {
+                                  "UpdateTeamConfirmed": {
+                                    "inputs": {
+                                      "body": {
+                                        "Confirmed": true,
+                                        "ConfirmedBy": "@variables('ownerRequest')?['UPN']",
+                                        "ConfirmedDateTime": "@{utcNow()}",
+                                        "ConfirmedDateTime@odata.type": "Edm.DateTime"
+                                      },
+                                      "host": {
+                                        "connection": {
+                                          "name": "@parameters('$connections')['azuretables']['connectionId']"
+                                        }
+                                      },
+                                      "method": "patch",
+                                      "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables/@{encodeURIComponent(variables('config')?['tableTeams'])}/entities(PartitionKey='@{encodeURIComponent(body('GetTeamConfirmed')?['value'][0]?['PartitionKey'])}',RowKey='@{encodeURIComponent(concat(body('GetTeamConfirmed')?['value'][0]?['PartitionKey'],'|',variables('ownerRequest')?['GroupId']))}')"
+                                    },
+                                    "runAfter": {},
+                                    "type": "ApiConnection"
+                                  },
+                                  "updateBodyConfirm": {
+                                    "inputs": {
+                                      "name": "body",
+                                      "value": "<h2 class=\"text-2xl font-semibold mb-4\">Confirmed</h2>\n<p class=\"mb-1\">Thank you for your confirmation of  @{body('GetTeamConfirmed')?['value'][0]?['DisplayName']}!</p>\n<p class=\"opacity-50 font-semibold\">Date Submitted: @{formatDateTime(utcNow(), 'dd.MM.yyyy HH:mm')}</p>"
+                                    },
+                                    "runAfter": {
+                                      "UpdateTeamConfirmed": [
+                                        "Succeeded"
+                                      ]
+                                    },
+                                    "type": "SetVariable"
+                                  }
+                                }
+                              },
+                              "expression": {
+                                "and": [
+                                  {
+                                    "equals": [
+                                      "@body('GetTeamConfirmed')?['value'][0]?['Confirmed']",
+                                      true
+                                    ]
+                                  }
+                                ]
+                              },
+                              "runAfter": {
+                                "GetTeamConfirmed": [
+                                  "Succeeded"
+                                ]
+                              },
+                              "type": "If"
+                            },
+                            "Condition": {
+                              "actions": {},
+                              "else": {
+                                "actions": {
+                                  "updateOwnersConfirmed": {
+                                    "inputs": {
+                                      "body": {
+                                        "Confirmed": true,
+                                        "ConfirmedDateTime": "@{utcNow()}",
+                                        "ConfirmedDateTime@odata.type": "Edm.DateTime"
+                                      },
+                                      "host": {
+                                        "connection": {
+                                          "name": "@parameters('$connections')['azuretables']['connectionId']"
+                                        }
+                                      },
+                                      "method": "patch",
+                                      "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables/@{encodeURIComponent(variables('config')?['tableOwners'])}/entities(PartitionKey='@{encodeURIComponent(variables('ownerRequest')?['PartitionKey'])}',RowKey='@{encodeURIComponent(variables('ownerRequest')?['RowKey'])}')"
+                                    },
+                                    "runAfter": {},
+                                    "type": "ApiConnection"
+                                  }
+                                }
+                              },
+                              "expression": {
+                                "and": [
+                                  {
+                                    "equals": [
+                                      "@variables('ownerRequest')?['Confirmed']",
+                                      true
+                                    ]
+                                  }
+                                ]
+                              },
+                              "runAfter": {},
+                              "type": "If"
+                            },
+                            "GetTeamConfirmed": {
+                              "inputs": {
+                                "host": {
+                                  "connection": {
+                                    "name": "@parameters('$connections')['azuretables']['connectionId']"
+                                  }
+                                },
+                                "method": "get",
+                                "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables/@{encodeURIComponent(variables('config')?['tableTeams'])}/entities",
+                                "queries": {
+                                  "$filter": "RowKey eq '@{concat(variables('ownerRequest')?['PartitionKey'],'|',variables('ownerRequest')?['GroupId'])}' and PartitionKey eq '@{variables('ownerRequest')?['PartitionKey']}'"
+                                }
+                              },
+                              "runAfter": {
+                                "Condition": [
+                                  "Succeeded"
+                                ]
+                              },
+                              "type": "ApiConnection"
+                            },
+                            "Response_3": {
+                              "inputs": {
+                                "body": "@replace(replace(variables('emailTemplate'), '[body]', variables('body')), '[meta]', '')",
+                                "headers": {
+                                  "Content-Type": "text/html"
+                                },
+                                "statusCode": 200
+                              },
+                              "kind": "Http",
+                              "runAfter": {
+                                "CheckConfirmed": [
+                                  "Succeeded"
+                                ]
+                              },
+                              "type": "Response"
+                            }
+                          }
+                        },
+                        "expression": {
+                          "and": [
+                            {
+                              "equals": [
+                                "@variables('action')",
+                                "check"
+                              ]
+                            }
+                          ]
+                        },
+                        "runAfter": {
+                          "updateOwnerRequest": [
+                            "Succeeded"
+                          ]
+                        },
+                        "type": "If"
+                      },
+                      "updateOwnerRequest": {
+                        "inputs": {
+                          "name": "OwnerRequest",
+                          "value": "@body('getRequest')?['value'][0]"
+                        },
+                        "runAfter": {},
+                        "type": "SetVariable"
+                      }
+                    },
+                    "else": {
+                      "actions": {
+                        "ResponseInvalid": {
+                          "inputs": {
+                            "body": "@replace(replace(variables('emailTemplate'), '[body]', variables('body')), '[meta]', '')",
+                            "headers": {
+                              "Content-Type": "text/html"
+                            },
+                            "statusCode": 200
+                          },
+                          "kind": "Http",
+                          "runAfter": {
+                            "updateBodyNotFound": [
+                              "Succeeded"
+                            ]
+                          },
+                          "type": "Response"
+                        },
+                        "updateBodyNotFound": {
+                          "inputs": {
+                            "name": "body",
+                            "value": "<h2 class=\"text-2xl font-semibold mb-4\">Invalid Request</h2>\n<p class=\"mb-1\">The request @{variables('requestId')} is invalid or has not been found!</p>\n<p class=\"opacity-50 font-semibold\">Current Date: @{formatDateTime(utcNow(), 'dd.MM.yyyy HH:mm')}</p>"
+                          },
+                          "runAfter": {},
+                          "type": "SetVariable"
+                        }
+                      }
+                    },
+                    "expression": {
+                      "and": [
+                        {
+                          "greater": [
+                            "@length(body('getRequest')?['value'])",
+                            0
+                          ]
+                        }
+                      ]
+                    },
+                    "runAfter": {
+                      "initRedirectLink": [
+                        "Succeeded"
+                      ]
+                    },
+                    "type": "If"
+                  },
+                  "getConfig": {
+                    "inputs": {
+                      "host": {
+                        "connection": {
+                          "name": "@parameters('$connections')['azuretables']['connectionId']"
+                        }
+                      },
+                      "method": "get",
+                      "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables/@{encodeURIComponent('solutionConfig')}/entities(PartitionKey='@{encodeURIComponent('11')}',RowKey='@{encodeURIComponent('config')}')"
+                    },
+                    "runAfter": {
+                      "initEmailTemplate": [
+                        "Succeeded"
+                      ]
+                    },
+                    "type": "ApiConnection"
+                  },
+                  "getRequest": {
+                    "inputs": {
+                      "host": {
+                        "connection": {
+                          "name": "@parameters('$connections')['azuretables']['connectionId']"
+                        }
+                      },
+                      "method": "get",
+                      "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables/@{encodeURIComponent(variables('config')?['tableOwners'])}/entities",
+                      "queries": {
+                        "$filter": "RequestId eq '@{variables('requestId')}'"
+                      }
+                    },
+                    "runAfter": {
+                      "initAction": [
+                        "Succeeded"
+                      ]
+                    },
+                    "type": "ApiConnection"
+                  },
+                  "initAction": {
+                    "inputs": {
+                      "variables": [
+                        {
+                          "name": "action",
+                          "type": "string",
+                          "value": "@{triggerOutputs()['queries']?['action']}"
+                        }
+                      ]
+                    },
+                    "runAfter": {
+                      "initRequestId": [
+                        "Succeeded"
+                      ]
+                    },
+                    "type": "InitializeVariable"
+                  },
+                  "initBody": {
+                    "inputs": {
+                      "variables": [
+                        {
+                          "name": "body",
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "runAfter": {
+                      "initConfig": [
+                        "Succeeded"
+                      ]
+                    },
+                    "type": "InitializeVariable"
+                  },
+                  "initConfig": {
+                    "inputs": {
+                      "variables": [
+                        {
+                          "name": "config",
+                          "type": "object",
+                          "value": "@json(body('getConfig')?['Value'])"
+                        }
+                      ]
+                    },
+                    "runAfter": {
+                      "getConfig": [
+                        "Succeeded"
+                      ]
+                    },
+                    "type": "InitializeVariable"
+                  },
+                  "initEmailTemplate": {
+                    "inputs": {
+                      "variables": [
+                        {
+                          "name": "emailTemplate",
+                          "type": "string",
+                          "value": "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"><title>Governance Toolkit 365 | Team Audit</title><script src=\"https://cdn.tailwindcss.com\"></script><link rel=\"stylesheet\" href=\"https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css\" integrity=\"sha512-z3gLpd7yknf1YoNbCzqRKc4qyor8gaKU1qmn+CShxbuBusANI9QpRohGBreCFkKxLhei6S9CQXFEbbKuqLg0DA==\" crossorigin=\"anonymous\" referrerpolicy=\"no-referrer\" />[meta]</head><body class=\"flex h-screen w-full justify-center items-center bg-gray-100\"><div class=\"p-7 rounded-md shadow-xl max-w-screen-md bg-white w-full\"><div class=\"flex mb-5\"><i class=\"fas fa-pen-to-square fa-2x text-cyan-600 mr-3\"></i><h1 class=\"text-cyan-600 font-semibold text-2xl\">Team Audit</h1></div><div class=\"flex flex-col\">[body]</div></div></body></html>"
+                        }
+                      ]
+                    },
+                    "runAfter": {},
+                    "type": "InitializeVariable"
+                  },
+                  "initOwnerRequest": {
+                    "inputs": {
+                      "variables": [
+                        {
+                          "name": "ownerRequest",
+                          "type": "object",
+                          "value": {}
+                        }
+                      ]
+                    },
+                    "runAfter": {
+                      "getRequest": [
+                        "Succeeded"
+                      ]
+                    },
+                    "type": "InitializeVariable"
+                  },
+                  "initRedirectLink": {
+                    "inputs": {
+                      "variables": [
+                        {
+                          "name": "redirectLink",
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "runAfter": {
+                      "initRedirectMeta": [
+                        "Succeeded"
+                      ]
+                    },
+                    "type": "InitializeVariable"
+                  },
+                  "initRedirectMeta": {
+                    "inputs": {
+                      "variables": [
+                        {
+                          "name": "redirectMeta",
+                          "type": "string",
+                          "value": "<meta http-equiv=\"refresh\" content=\"0; url=[link] \" />"
+                        }
+                      ]
+                    },
+                    "runAfter": {
+                      "initOwnerRequest": [
+                        "Succeeded"
+                      ]
+                    },
+                    "type": "InitializeVariable"
+                  },
+                  "initRequestId": {
+                    "inputs": {
+                      "variables": [
+                        {
+                          "name": "requestId",
+                          "type": "string",
+                          "value": "@{triggerOutputs()['queries']?['requestId']}"
+                        }
+                      ]
+                    },
+                    "runAfter": {
+                      "initBody": [
+                        "Succeeded"
+                      ]
+                    },
+                    "type": "InitializeVariable"
+                  }
+                },
+                "contentVersion": "1.0.0.0",
+                "outputs": {},
+                "parameters": {
+                  "$connections": {
+                    "defaultValue": {},
+                    "type": "Object"
+                  }
+                },
+                "triggers": {
+                  "manual": {
+                    "inputs": {
+                      "method": "GET",
+                      "schema": {}
+                    },
+                    "kind": "Http",
+                    "type": "Request"
+                  }
+                }
+              },
+              "parameters": {
+                "$connections": {
+                  "value": {
+                    "azuretables": {
+                      "connectionId": "/subscriptions/0c5d1d4f-64e3-47a0-ace1-25494a794cbf/resourceGroups/RG-GT365Demo/providers/Microsoft.Web/connections/azuretables",
+                      "connectionName": "azuretables",
+                      "id": "/subscriptions/0c5d1d4f-64e3-47a0-ace1-25494a794cbf/providers/Microsoft.Web/locations/westeurope/managedApis/azuretables"
+                    }
+                  }
+                }
+              }
+            },
+            "subscriptionid": "[subscription().subscriptionId]",
+            "resourcegroup": "[resourceGroup().name]",
+            "location": "[resourceGroup().location]",
+            "workflows_09_TeamsOwnersGuestAudit_03_name": "11-04-ReportTeamsAudit-Request",
+            "connections_azuretables_externalid": "[format('/subscriptions/{0}/resourceGroups/{1}/providers/Microsoft.Web/connections/azuretables', variables('subscriptionid'), variables('resourcegroup'))]",
+            "connections_office365_externalid": "[format('/subscriptions/{0}/resourceGroups/{1}/providers/Microsoft.Web/connections/office365', variables('subscriptionid'), variables('resourcegroup'))]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Logic/workflows",
+              "apiVersion": "2019-05-01",
+              "name": "[variables('workflows_09_TeamsOwnersGuestAudit_03_name')]",
+              "location": "[variables('location')]",
+              "identity": {
+                "type": "UserAssigned",
+                "userAssignedIdentities": {
+                  "[format('{0}', parameters('UAMI'))]": {}
+                }
+              },
+              "properties": {
+                "state": "Enabled",
+                "definition": "[variables('$fxv#0').definition]",
+                "parameters": {
+                  "$connections": {
+                    "value": {
+                      "azuretables": {
+                        "connectionId": "[variables('connections_azuretables_externalid')]",
+                        "connectionName": "azuretables",
+                        "id": "[format('/subscriptions/{0}/providers/Microsoft.Web/locations/{1}/managedApis/azuretables', variables('subscriptionid'), variables('location'))]"
+                      },
+                      "office365": {
+                        "connectionId": "[variables('connections_office365_externalid')]",
+                        "connectionName": "office365",
+                        "id": "[format('/subscriptions/{0}/providers/Microsoft.Web/locations/{1}/managedApis/office365', variables('subscriptionid'), variables('location'))]"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2022-09-01",
+      "name": "11-05-ReportTeamsAudit-Reminder",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "UAMI": {
+            "value": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('varUAMIname'))]"
+          },
+          "UAMIname": {
+            "value": "[variables('varUAMIname')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.30.23.60470",
+              "templateHash": "2350267082922805430"
+            }
+          },
+          "parameters": {
+            "UAMIname": {
+              "type": "string"
+            },
+            "UAMI": {
+              "type": "string"
+            }
+          },
+          "variables": {
+            "$fxv#0": {
+              "definition": {
+                "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+                "actions": {
+                  "Condition": {
+                    "actions": {
+                      "ReminderLessThanMax": {
+                        "actions": {
+                          "TriggerFlow2": {
+                            "inputs": {
+                              "method": "POST",
+                              "uri": "@{variables('config')?['flow2Url']}"
+                            },
+                            "runAfter": {
+                              "updateNextReminderData": [
+                                "Succeeded"
+                              ]
+                            },
+                            "type": "Http"
+                          },
+                          "updateNextReminderData": {
+                            "inputs": {
+                              "body": {
+                                "CurrentReminderCount": "@add(variables('currentReminderCount'), 1)",
+                                "NextReminderDate": "@{addDays(utcNow(), int(variables('config')?['reminderInterval'] ))}"
+                              },
+                              "host": {
+                                "connection": {
+                                  "name": "@parameters('$connections')['azuretables']['connectionId']"
+                                }
+                              },
+                              "method": "patch",
+                              "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables/@{encodeURIComponent(variables('config')?['tableCampaigns'])}/entities(PartitionKey='@{encodeURIComponent(variables('campaign')?['PartitionKey'])}',RowKey='@{encodeURIComponent(variables('campaign')?['RowKey'])}')"
+                            },
+                            "runAfter": {},
+                            "type": "ApiConnection"
+                          }
+                        },
+                        "expression": {
+                          "and": [
+                            {
+                              "lessOrEquals": [
+                                "@variables('currentReminderCount')",
+                                "@variables('maxReminderCount')"
+                              ]
+                            }
+                          ]
+                        },
+                        "runAfter": {},
+                        "type": "If"
+                      }
+                    },
+                    "expression": {
+                      "and": [
+                        {
+                          "equals": [
+                            "@variables('canRunReminder')",
+                            true
+                          ]
+                        }
+                      ]
+                    },
+                    "runAfter": {
+                      "initMaxReminderCount": [
+                        "Succeeded"
+                      ]
+                    },
+                    "type": "If"
+                  },
+                  "getCampaign": {
+                    "inputs": {
+                      "host": {
+                        "connection": {
+                          "name": "@parameters('$connections')['azuretables']['connectionId']"
+                        }
+                      },
+                      "method": "get",
+                      "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables/@{encodeURIComponent(variables('config')?['tableCampaigns'])}/entities",
+                      "queries": {
+                        "$filter": "IsActive eq true"
+                      }
+                    },
+                    "runAfter": {
+                      "initConfig": [
+                        "Succeeded"
+                      ]
+                    },
+                    "type": "ApiConnection"
+                  },
+                  "getConfig": {
+                    "inputs": {
+                      "host": {
+                        "connection": {
+                          "name": "@parameters('$connections')['azuretables']['connectionId']"
+                        }
+                      },
+                      "method": "get",
+                      "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables/@{encodeURIComponent('solutionConfig')}/entities(PartitionKey='@{encodeURIComponent('11')}',RowKey='@{encodeURIComponent('config')}')"
+                    },
+                    "runAfter": {},
+                    "type": "ApiConnection"
+                  },
+                  "initCampaign": {
+                    "inputs": {
+                      "variables": [
+                        {
+                          "name": "campaign",
+                          "type": "object",
+                          "value": "@body('getCampaign')?['value'][0]"
+                        }
+                      ]
+                    },
+                    "runAfter": {
+                      "getCampaign": [
+                        "Succeeded"
+                      ]
+                    },
+                    "type": "InitializeVariable"
+                  },
+                  "initCanRunReminder": {
+                    "inputs": {
+                      "variables": [
+                        {
+                          "name": "canRunReminder",
+                          "type": "boolean",
+                          "value": "@equals(formatDateTime(variables('campaign')?['NextReminderDate'], 'yyyy-MM-dd'), formatDateTime(utcNow(), 'yyyy-MM-dd'))"
+                        }
+                      ]
+                    },
+                    "runAfter": {
+                      "initCampaign": [
+                        "Succeeded"
+                      ]
+                    },
+                    "type": "InitializeVariable"
+                  },
+                  "initConfig": {
+                    "inputs": {
+                      "variables": [
+                        {
+                          "name": "config",
+                          "type": "object",
+                          "value": "@json(body('getConfig')?['Value'])"
+                        }
+                      ]
+                    },
+                    "runAfter": {
+                      "getConfig": [
+                        "Succeeded"
+                      ]
+                    },
+                    "type": "InitializeVariable"
+                  },
+                  "initCurrentReminderCount": {
+                    "inputs": {
+                      "variables": [
+                        {
+                          "name": "currentReminderCount",
+                          "type": "integer",
+                          "value": "@variables('campaign')?['CurrentReminderCount']"
+                        }
+                      ]
+                    },
+                    "runAfter": {
+                      "initCanRunReminder": [
+                        "Succeeded"
+                      ]
+                    },
+                    "type": "InitializeVariable"
+                  },
+                  "initMaxReminderCount": {
+                    "inputs": {
+                      "variables": [
+                        {
+                          "name": "maxReminderCount",
+                          "type": "integer",
+                          "value": "@int(variables('config')?['remindersCount'])"
+                        }
+                      ]
+                    },
+                    "runAfter": {
+                      "initCurrentReminderCount": [
+                        "Succeeded"
+                      ]
+                    },
+                    "type": "InitializeVariable"
+                  }
+                },
+                "contentVersion": "1.0.0.0",
+                "outputs": {},
+                "parameters": {
+                  "$connections": {
+                    "defaultValue": {},
+                    "type": "Object"
+                  }
+                },
+                "triggers": {
+                  "Recurrence": {
+                    "evaluatedRecurrence": {
+                      "frequency": "Day",
+                      "interval": 1,
+                      "schedule": {
+                        "hours": [
+                          "7"
+                        ]
+                      }
+                    },
+                    "recurrence": {
+                      "frequency": "Day",
+                      "interval": 1,
+                      "schedule": {
+                        "hours": [
+                          "7"
+                        ]
+                      }
+                    },
+                    "type": "Recurrence"
+                  }
+                }
+              },
+              "parameters": {
+                "$connections": {
+                  "value": {
+                    "azuretables": {
+                      "connectionId": "/subscriptions/0c5d1d4f-64e3-47a0-ace1-25494a794cbf/resourceGroups/RG-GT365Demo/providers/Microsoft.Web/connections/azuretables",
+                      "connectionName": "azuretables",
+                      "id": "/subscriptions/0c5d1d4f-64e3-47a0-ace1-25494a794cbf/providers/Microsoft.Web/locations/westeurope/managedApis/azuretables"
+                    }
+                  }
+                }
+              }
+            },
+            "subscriptionid": "[subscription().subscriptionId]",
+            "resourcegroup": "[resourceGroup().name]",
+            "location": "[resourceGroup().location]",
+            "connections_azuretables_externalid": "[format('/subscriptions/{0}/resourceGroups/{1}/providers/Microsoft.Web/connections/azuretables', variables('subscriptionid'), variables('resourcegroup'))]",
+            "workflows_09_TeamsOwnersGuestAudit_04_name": "11-05-ReportTeamsAudit-Reminder"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Logic/workflows",
+              "apiVersion": "2019-05-01",
+              "name": "[variables('workflows_09_TeamsOwnersGuestAudit_04_name')]",
+              "location": "[variables('location')]",
+              "identity": {
+                "type": "UserAssigned",
+                "userAssignedIdentities": {
+                  "[format('{0}', parameters('UAMI'))]": {}
+                }
+              },
+              "properties": {
+                "state": "Enabled",
+                "definition": "[variables('$fxv#0').definition]",
+                "parameters": {
+                  "$connections": {
+                    "value": {
+                      "azuretables": {
+                        "connectionId": "[variables('connections_azuretables_externalid')]",
+                        "connectionName": "azuretables",
+                        "id": "[format('/subscriptions/{0}/providers/Microsoft.Web/locations/{1}/managedApis/azuretables', variables('subscriptionid'), variables('location'))]"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
