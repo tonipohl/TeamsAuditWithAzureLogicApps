@@ -27,18 +27,20 @@ All Logic Apps are using a central configuration. The configuration is stored in
 }
 ~~~
 
-reminderInterval: If the team owner not checked the guest list, a reminder is sent after the specified number of days.
-remindersCount: The times of reminders sent to the team owner.
-tableCampaigns: Name of the table where the campaign data is stored.
-tableOwners: Name of the table where the team owners are stored.
-tableRecipients: Name of the table where the recipients are stored.
-tableTeams: Name of the table where the teams with inactive users are stored.
-submitActionUrl: Endpoint for the email check & confirm action.
-flow1Url: Trigger endpoint for the run teams flow.
-flow2Url: Trigger endpoint for the send emails flow.
-adminEmail: All admin emails as controll & fallback in the format of "email@email.com;email2@email.com".
-showMembers: If true, the members of the team are shown in the email.
-debug: If debug is true, emails are sent to the adminEmail address instead of sending to the teams owners.
+| Key               | Description                                                                                       |
+|-------------------|---------------------------------------------------------------------------------------------------|
+| reminderInterval  | If the team owner not checked the guest list, a reminder is sent after the specified number of days. |
+| remindersCount    | The times of reminders sent to the team owner.                                                    |
+| tableCampaigns    | Name of the table where the campaign data is stored.                                              |
+| tableOwners       | Name of the table where the team owners are stored.                                               |
+| tableRecipients   | Name of the table where the recipients are stored.                                                |
+| tableTeams        | Name of the table where the teams with inactive users are stored.                                 |
+| submitActionUrl   | Endpoint for the email check & confirm action.                                                    |
+| flow1Url          | Trigger endpoint for the run teams flow.                                                          |
+| flow2Url          | Trigger endpoint for the send emails flow.                                                        |
+| adminEmail        | All admin emails as control & fallback in the format of "email@email.com;email2@email.com".       |
+| showMembers       | If true, the members of the team are shown in the email.                                          |
+| debug             | If debug is true, emails are sent to the adminEmail address instead of sending to the teams owners.|
 
 ### app config
 
@@ -53,9 +55,9 @@ debug: If debug is true, emails are sent to the adminEmail address instead of se
 ### App Registration
 
 For some operations, an app registration is needed with the following permissions:  
-User.ReadWrite.All
-Group.ReadWrite.All
-etc...
+- User.ReadWrite.All
+- Group.ReadWrite.All
+- ... extend as needed for other operations like sending emails, etc.
 
 ### Key Vault
 
